@@ -896,14 +896,20 @@ def _apply_user_fact_overrides(original_text: str, raw: RawExtraction, evidence_
         line = _line_at(original_text, evidence_positions.get(evidence_id, -1))
         position = evidence_positions.get(evidence_id, -1)
         for field, value in (("action", action.action), ("owner", action.owner), ("time", action.time)):
-            if value is None or (field == "action" and _unknown_next_action_value(value)):
+            if value is None:
+                continue
+            if field == "action" and _unknown_next_action_value(value) and not _next_action_field_confirmation(line, field):
                 continue
             if _next_action_field_supersedes_prior(line, field):
                 current = latest_field_values.get(field)
                 if current is None or position > current[1]:
                     latest_field_values[field] = (str(value), position)
     if latest_field_values:
-        resolving_fields = {field for field, (value, _) in latest_field_values.items() if not _unknown_next_action_value(value)}
+        resolving_fields = {
+            field
+            for field, (value, position) in latest_field_values.items()
+            if not _unknown_next_action_value(value) or _next_action_field_confirmation(_line_at(original_text, position), field)
+        }
         for action in resolved.candidate_next_actions:
             position = evidence_positions.get(action.evidence_id or "", -1)
             if "owner" in resolving_fields and position < latest_field_values["owner"][1]:

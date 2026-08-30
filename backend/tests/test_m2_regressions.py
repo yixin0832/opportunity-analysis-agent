@@ -983,7 +983,7 @@ def test_specific_next_action_time_confirmation_clears_time_conflict_without_los
     assert result.confirmed_next_action.owner == "张2"
     assert result.confirmed_next_action.time == "待确认"
     assert not any("下一步行动负责人" in risk.description for risk in result.opportunity_risks)
-    assert any("下一步行动时间" in risk.description for risk in result.opportunity_risks)
+    assert not any("下一步行动时间" in risk.description for risk in result.opportunity_risks)
     assert any(item.value == "下一步行动时间仍需确认" for item in result.unconfirmed_info)
 
 
@@ -1559,6 +1559,66 @@ def test_confirming_new_action_time_resolves_prior_unknown_time_conflict():
     assert result.confirmed_next_action.action == "进行商务评估"
     assert result.confirmed_next_action.owner == "张1"
     assert result.confirmed_next_action.time == "9月2号"
+    assert not any(risk.type == "conflict" and "下一步行动" in risk.description for risk in result.opportunity_risks)
+
+
+def test_next_action_time_conflict_can_resolve_to_unknown_time():
+    original = "王总说下周四可以安排一次产品 Demo。"
+    text = build_revision_input(
+        original,
+        [
+            [ClarifyAnswer(question_id="next_action.owner", answer="销售顾问林敏")],
+            [ClarifyAnswer(question_id="其他补充信息", answer="下一步行动是商务评估，负责人是张1，时间不确定")],
+            [
+                ClarifyAnswer(question_id="next_action.action", answer="商务评估"),
+                ClarifyAnswer(question_id="next_action.owner", answer="张1"),
+                ClarifyAnswer(question_id="next_action.time", answer="待确定"),
+            ],
+        ],
+    )
+    result = build_validated_opportunity(
+        text,
+        RawExtraction(
+            evidence_candidates=[EvidenceCandidate(id="E01", quote="下周四可以安排一次产品 Demo", field="next_action", start_char=text.index("下周四可以安排一次产品 Demo"))],
+            candidate_next_actions=[CandidateNextAction(action="安排产品 Demo", time="下周四", evidence_id="E01", attribution=Attribution.CUSTOMER, explicitness=Explicitness.EXPLICIT)],
+            stage_signals=[sig("demo_agreed", "E01")],
+        ),
+    )
+    assert result.confirmed_next_action is not None
+    assert result.confirmed_next_action.action == "进行商务评估"
+    assert result.confirmed_next_action.owner == "张1"
+    assert result.confirmed_next_action.time == "待确认"
+    assert not any(risk.type == "conflict" and "下一步行动" in risk.description for risk in result.opportunity_risks)
+    assert any(item.value == "下一步行动时间仍需确认" for item in result.unconfirmed_info)
+
+
+def test_repeated_unknown_next_action_time_confirmation_stays_resolved():
+    original = "王总说下周四可以安排一次产品 Demo。"
+    text = build_revision_input(
+        original,
+        [
+            [ClarifyAnswer(question_id="next_action.owner", answer="销售顾问林敏")],
+            [ClarifyAnswer(question_id="其他补充信息", answer="下一步行动是商务评估，负责人是张1，时间不确定")],
+            [
+                ClarifyAnswer(question_id="next_action.action", answer="商务评估"),
+                ClarifyAnswer(question_id="next_action.owner", answer="张1"),
+                ClarifyAnswer(question_id="next_action.time", answer="待确定"),
+            ],
+            [ClarifyAnswer(question_id="next_action.time", answer="待确定")],
+        ],
+    )
+    result = build_validated_opportunity(
+        text,
+        RawExtraction(
+            evidence_candidates=[EvidenceCandidate(id="E01", quote="下周四可以安排一次产品 Demo", field="next_action", start_char=text.index("下周四可以安排一次产品 Demo"))],
+            candidate_next_actions=[CandidateNextAction(action="安排产品 Demo", time="下周四", evidence_id="E01", attribution=Attribution.CUSTOMER, explicitness=Explicitness.EXPLICIT)],
+            stage_signals=[sig("demo_agreed", "E01")],
+        ),
+    )
+    assert result.confirmed_next_action is not None
+    assert result.confirmed_next_action.action == "进行商务评估"
+    assert result.confirmed_next_action.owner == "张1"
+    assert result.confirmed_next_action.time == "待确认"
     assert not any(risk.type == "conflict" and "下一步行动" in risk.description for risk in result.opportunity_risks)
 
 
