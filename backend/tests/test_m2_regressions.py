@@ -1643,6 +1643,26 @@ def test_repeated_unknown_next_action_time_confirmation_stays_resolved():
     assert not any(risk.type == "conflict" and "下一步行动" in risk.description for risk in result.opportunity_risks)
 
 
+def test_multiple_other_supplements_with_different_next_actions_remain_conflicting():
+    original = "客户没有取消需求，下一步确认由销售负责人李娜下周二和赵经理、采购刘经理开一次预算确认会。"
+    text = build_revision_input(
+        original,
+        [
+            [ClarifyAnswer(question_id="其他补充信息", answer="客户最终确认当前下一步行动是安排产品 Demo，建议负责人为销售顾问林敏，时间为下周四下午")],
+            [ClarifyAnswer(question_id="其他补充信息", answer="当前下一步行动是商务评估，建议负责人为张1，时间为下周五")],
+        ],
+    )
+    result = build_validated_opportunity(text, RawExtraction())
+    assert result.confirmed_next_action is not None
+    assert result.confirmed_next_action.action == "待确认"
+    assert result.confirmed_next_action.owner == "待确认"
+    assert result.confirmed_next_action.time == "待确认"
+    risk_descriptions = [risk.description for risk in result.opportunity_risks]
+    assert any("下一步行动" in description and "开预算确认会" in description and "安排产品 Demo" in description and "进行商务评估" in description for description in risk_descriptions)
+    assert any("下一步行动负责人" in description and "李娜" in description and "林敏" in description and "张1" in description for description in risk_descriptions)
+    assert any("下一步行动时间" in description and "下周二" in description and "下周四下午" in description and "下周五" in description for description in risk_descriptions)
+
+
 def test_original_next_action_fallback_overrides_sales_attribution_for_confirmed_meeting_sentence():
     text = "今天和云澜教育集团教务运营负责人赵经理、信息化负责人孙工复盘了智能客服试点。客户确认招生咨询和学员售后答疑两个场景仍然要继续推进，试点效果总体认可，也希望评估正式采购方案。赵经理上午说今年项目预算大约 50 万，可以继续走采购申请；下午采购刘经理补充说财务系统里的立项预算是 70 万左右，两个金额还需要他们内部确认。客户没有取消需求，下一步确认由销售负责人李娜下周二和赵经理、采购刘经理开一次预算确认会。"
     quote = "下一步确认由销售负责人李娜下周二和赵经理、采购刘经理开一次预算确认会"

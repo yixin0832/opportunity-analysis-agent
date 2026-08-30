@@ -782,10 +782,22 @@ def _qualified_user_origin(evidence_id: str | None, evidence_origins: dict[str, 
     return evidence_origins.get(evidence_id or "") in {"user_correction", "user_confirmation"}
 
 
+def _supplement_confirmation_line(text: str) -> bool:
+    normalized = re.sub(r"\s+", "", text.strip())
+    return normalized.startswith(("补充信息确认", "其他补充信息确认"))
+
+
+def _explicit_supplement_resolution_intent(text: str) -> bool:
+    normalized = re.sub(r"\s+", "", text.strip())
+    return bool(re.search(r"(作废|无效|不算|取消|废弃|不再作为|以.{1,30}为准)", normalized))
+
+
 def _next_action_resolution_intent(text: str) -> bool:
     normalized = re.sub(r"\s+", "", text.strip())
     if has_correction_intent(normalized):
         return True
+    if _supplement_confirmation_line(normalized) and not _explicit_supplement_resolution_intent(normalized):
+        return False
     patterns = (
         r"(当前|真实|现在|本次).{0,16}(负责人|责任人|行动|时间).{0,8}(是|为|确认|确定)",
         r"(最终|最新).{0,16}(确认|确定)",
@@ -817,6 +829,8 @@ def _next_action_field_supersedes_prior(line: str, field: str) -> bool:
     normalized = re.sub(r"\s+", "", line.strip())
     if _next_action_field_confirmation(line, field):
         return True
+    if _supplement_confirmation_line(normalized) and not _explicit_supplement_resolution_intent(normalized):
+        return False
     if not re.search(r"(当前|真实|现在|本次|最终|最新|以.+为准|作废|无效|不算|取消)", normalized):
         return False
     if field == "owner":
