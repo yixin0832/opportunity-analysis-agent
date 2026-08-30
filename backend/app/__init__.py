@@ -1,0 +1,2 @@
+"""Opportunity analysis backend package."""
+

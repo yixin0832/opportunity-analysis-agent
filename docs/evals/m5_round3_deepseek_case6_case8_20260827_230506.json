@@ -1,0 +1,1427 @@
+{
+  "eval_name": "M5 Round3 DeepSeek Regression Case6-Case8",
+  "created_at": "2026-08-27T23:05:16",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "notes": [
+    "真实 DeepSeek Provider；非 Mock。",
+    "通过 FastAPI TestClient 调用 /analyze，覆盖 API route、LLM Provider、Pydantic、Evidence Validator、Rule Engine、Repository 保存。",
+    "未记录 API Key、Authorization Header 或任何 Secret。",
+    "本轮只测试、记录、分析，不修改业务逻辑。"
+  ],
+  "records": [
+    {
+      "case_id": "Case6",
+      "original_input": "客户已经完成内部审批，最终确认采用我们的方案。双方合同已经签署完成，正式订单也已经确认。项目计划下月启动实施，由客户 IT 团队配合上线。",
+      "expected": {
+        "客户需求": "输入未说明具体原始业务痛点，空或待确认可接受；不得编造需求。",
+        "核心场景": "可为空或体现方案/上线场景，但不得编造具体业务场景。",
+        "预算": "未提及预算，待确认。",
+        "决策人": "未出现具体决策人姓名，待确认或部分信息待确认；不得编造。",
+        "影响人": "客户 IT 团队配合上线不等于购买影响人，空/待确认可接受。",
+        "时间计划": "应识别下月启动实施。",
+        "商机阶段": "S5 赢单签约，合同签署或订单确认优先于 S4。",
+        "风险": "无明确商机风险。",
+        "下一步行动": "不得错误生成客户已确认 Demo；可基于项目计划识别启动实施，或给出温和建议。",
+        "未确认信息": "可包含预算、决策人等缺失信息；不应将缺失信息都升级为风险。"
+      },
+      "api_status_code": 200,
+      "schema_success": true,
+      "schema_error": null,
+      "llm_trace": {
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "request_messages": [
+          {
+            "role": "system",
+            "content": "你是销售拜访记录 RawExtraction 抽取器。必须只输出 json 对象，不要 Markdown，不要解释。\n\nTask Contract：\n你的目标是将非结构化销售拜访记录转换为可供 Evidence Validator 和 Rule Engine 使用的 RawExtraction 结构化事实集合。所有输出必须忠于原文、可追溯、不可补全。你负责回答“记录里实际表达了什么”，而不是“按照业务规则最终应该得出什么结论”。\n- 只抽取 candidate_needs、candidate_scenarios、candidate_budget、candidate_people、candidate_timeline、candidate_next_actions、stage_signals、ambiguities、possible_conflicts、evidence_candidates。\n- 不要输出最终 S0-S5、status、OpportunityRisk 或 ValidatedOpportunity。\n- S0 不需要新增 Stage Signal；S0 由 Rule Engine 在没有满足更高阶段且没有明确需求时兜底判断。\n- RawExtraction 只抽取能支持阶段判断的事实和 Signal，不直接输出 S0-S5。\n\nOutput Schema：\n- attribution: customer | sales | third_party | unknown\n- explicitness: explicit | ambiguous\n- polarity: positive | negative\n- current_validity: active | historical | invalidated | unknown\n- candidate_people.kind: decision_maker | influencer | unknown\n- stage_signal.signal_type 只能是：need_identified, demo_agreed, trial_agreed, technical_exchange_agreed, solution_evaluation, budget_discussed, quote_discussed, procurement_discussed, contract_terms_discussed, internal_project_approval, vendor_decision, contract_signed, order_confirmed, demand_invalidated, budget_unavailable, demand_delayed\n- candidate_needs / candidate_scenarios / candidate_budget / candidate_timeline 的每个对象只能使用：value, evidence_id, attribution, explicitness, polarity, current_validity。\n- candidate_people 的每个对象只能使用：name, role, kind, authority_confirmed, evidence_id, attribution, explicitness。\n- candidate_next_actions 的每个对象只能使用：action, owner, time, evidence_id, attribution, explicitness。\n- stage_signals 的每个对象只能使用：signal_type, explicitness, polarity, attribution, current_validity, evidence_id。\n- evidence_candidates 的每个对象只能使用：id, quote, field。\n- possible_conflicts 的每个对象只能使用：field, description, evidence_ids。\n- ambiguities 必须是字符串数组 list[str]，不要输出对象。例如：\"budget: 客户确认有预算，但金额未确认\"。\n- 禁止使用 description/scenario/event/date/due_date/budget/evidence_ids 代替 candidate 字段中的 value/evidence_id。candidate 字段必须是单数 evidence_id。\n- 数组字段没有内容时返回 []，不要返回 null、缺失字段、“未确认”或自定义字符串。\n\nJSON 骨架：\n{\n  \"candidate_needs\": [],\n  \"candidate_scenarios\": [],\n  \"candidate_budget\": [],\n  \"candidate_people\": [],\n  \"candidate_timeline\": [],\n  \"candidate_next_actions\": [],\n  \"stage_signals\": [],\n  \"ambiguities\": [],\n  \"possible_conflicts\": [],\n  \"evidence_candidates\": []\n}\n\nField Semantics：\n- candidate_needs 表示客户明确表达的业务问题、痛点、改善目标、能力需求或希望解决的问题。Need 回答“客户想解决什么问题 / 达成什么目标”。例如“客服工单处理太慢”“希望减少人工处理”“知识检索准确率需要提高”。\n- candidate_scenarios 表示产品 / 方案准备落地或使用的具体业务场景、流程、部门或环节。Scenario 回答“能力具体用在哪里”。例如“售后客服知识库问答”“销售拜访纪要自动整理”“内部 IT 服务台”“采购合同审核场景”。\n- 一句话确实同时包含 Need 和 Scenario 时允许分别抽取，但必须分别指向能够支持对应含义的 Evidence。不要为了填字段而强行把 Need 推断成 Scenario，反之亦然。\n- candidate_budget.value 保留预算金额、预算范围或预算存在性本身及必要限定词，例如“约 50 万”“不超过 30 万”“至少 80 万”“30 到 50 万之间”“今年有预算”。不要包含“客户表示”“今年有”“预算为”“预算已经落实为”等叙述性外壳；也不要自行标准化金额、换算单位或取区间中位数。“大约 50 万”中的“大约”不能丢失。value 可以比 evidence quote 更短，但必须忠实来自 quote 的业务含义。\n- “今年有预算”可以抽取预算存在这一事实；如果没有金额，不得补金额，并在 ambiguities 中写入金额未确认。\n- candidate_people.kind 必须基于原文角色证据，不得基于职位称呼、人物重要程度或“总”字推断。所有出现的人名或称呼（如王总、李总、张经理、IT 王工）都必须进入 candidate_people，即使只是在“王总说...”中出现。\n- 如果原文只说明某人参与沟通、提出需求、安排 Demo、协调推进，但没有说明其最终决策权限，则 kind=unknown、role=null 或按原文角色填写、authority_confirmed=false。示例：原文“王总说下周四可以安排一次产品 Demo”时，candidate_people 应包含 {\"name\":\"王总\",\"role\":null,\"kind\":\"unknown\",\"authority_confirmed\":false,\"evidence_id\":\"E01\",\"attribution\":\"customer\",\"explicitness\":\"explicit\"}。\n- 只有存在明确角色/权限证据，例如“最终由王总拍板”“王总负责最终审批”“王总是这个项目的决策人”等语义等价表达，才允许 kind=decision_maker 且 authority_confirmed=true。\n- Influencer 指没有明确最终决策权限，但根据原文证据承担会实质影响方案 / 购买判断的角色，例如业务需求负责人、技术评估负责人、方案评估参与者、PoC / 试用评价负责人、采购评审参与者、正式供应商选型 / 比选参与者。\n- 如果明确说明某人参与评估、技术沟通、采购、业务需求梳理等，但没有最终决策权限，应按证据标为 influencer 或 unknown，不得标为 confirmed decision maker。正例：“IT 王工负责技术方案评估”可以 kind=influencer。反例：仅出现人物姓名、参加会议、听 Demo、协调会议、安排 Demo 时间、职位较高或被称为“总 / 经理”，不足以成为 influencer。\n- “业务负责人最终审批”如果姓名没有出现，不得自行猜测姓名，应在 ambiguities 中记录“decision_maker: 决策人姓名未确认”。\n- candidate_timeline.value 忠实抽取时间计划。若原文包含“时间 + 对应业务动作或里程碑”，value 应保留完整业务计划，例如“下季度上线”“本月底完成供应商选择”“下个月完成商务评估”；不要只抽“本月底”“下个月”等孤立时间词。如果原文只有纯时间、没有明确动作，则只保留该时间表达。不得自行生成日期或补充原文没有的动作；具体日期/时间未确认时写入 ambiguities。value 可以比 evidence quote 更短或相同，但不能丢失时间对应的业务动作。\n- candidate_next_actions 只能来自客户明确约定或拜访记录明确记载的已确认动作。AI 自己认为“下一步应该做什么”不是 candidate_next_actions。\n- 如果原文只明确“下次安排 Demo”，但未说明负责人和时间，owner/time 使用 null，并在 ambiguities 中记录负责人/时间缺失。不得凭空补 owner 或 time。\n\nStage Signal Scan：\n输出前请在内部逐项检查下面所有 Stage Signal 类型。不要输出检查过程，只输出命中的 stage_signals。完整短句也可以形成 signal；禁止的是孤立关键词触发。\n\nStage Signal 业务语义定义：\n- need_identified：客户明确表达业务问题、痛点、需求、目标或使用场景。例如客服工单处理慢、希望减少人工、想覆盖售后知识库场景。\n- demo_agreed：客户明确同意、约定、可以安排或已经安排 Demo / 产品演示。不是只有出现“Demo”才触发；“王总说下周可以给业务团队演示一下产品”也属于 demo_agreed。反例：“我们给客户介绍了 Demo 能力”不等于客户同意 Demo。\n- trial_agreed：客户明确同意、安排或计划试用 / PoC / 试点验证。\n- technical_exchange_agreed：客户明确同意、希望或安排技术交流、方案交流、拉技术同学沟通。\n- solution_evaluation：客户明确同意或表示可以评估某个产品、方案或技术方案。例如“客户表示可以评估一下客服自动化方案”。反例：“客户希望 AI 用在客服场景”只能说明 Need / Scenario，不自动代表客户已经同意方案评估。\n- budget_discussed：客户明确询问、说明、讨论或确认预算金额、预算范围、预算存在性或预算安排。正例：“客户确认今年有预算”“客户问我们预算规模通常需要多少”。反例：“销售准备下次和客户聊预算”不代表客户已经讨论预算。历史预算也要抽取，但 current_validity=historical 或 invalidated。\n- quote_discussed：客户明确询问、讨论、要求、收到或评估报价、价格、价格方案。正例：“客户问了报价”“客户正在评估我们的价格方案”。反例：“销售准备下次发报价”不代表客户已经讨论报价。\n- procurement_discussed：客户明确提到进入、正在进行、需要走、讨论或确认采购流程、采购申请、采购手续。短句“客户说需要走采购流程”应抽取 procurement_discussed。\n- contract_terms_discussed：客户、法务或采购明确讨论、查看、评审或确认合同条款、付款条款、法务条款。\n- internal_project_approval：客户明确表示项目已进入或正在进行内部立项、内部审批、审批流程、管理层审批；或明确某人负责最终审批。正例：“项目已经进入内部立项流程”“王总负责该项目最终审批”。反例：“销售觉得客户应该快审批了”“王总参加了产品 Demo”不得产生 internal_project_approval。\n- vendor_decision：客户明确表示进入供应商评审、供应商选择、供应商决策、选型或比选流程。正例：“客户说下周进入供应商评审”“目前正在进行三家供应商比选”。反例：“客户还在了解市场上的几家产品”不等于正式供应商决策流程。根据本题 S4 规则，“进入供应商评审”足以作为 vendor_decision signal；最终 Stage 仍由 Rule Engine 判断。\n- contract_signed：客户或记录明确表示合同已签、签完、完成签约。\n- order_confirmed：客户或记录明确表示正式订单已确认、订单已下、订单完成确认。\n- demand_invalidated：客户明确表示项目暂停、取消、需求失效、暂不推进。正例：“这个项目先取消，不继续推进了”。反例：“上线时间暂时待确认”不等于需求失效。\n- budget_unavailable：客户明确表示当前没有预算、暂无预算、今年没有预算。\n- demand_delayed：客户明确表达项目或计划延期、推迟、暂缓到以后、等明年再看、原计划向后移动。正例：“原计划 9 月上线，现在延期到明年”。反例：“具体上线时间还没有确定”“后面再约时间”“上线日期待确认”是 timeline unknown，不是 delay。产生 demand_delayed 时必须 polarity=negative，current_validity=active 或 unknown。\n\nS3 Demand Validity Boundary：\n- S3 不是“出现预算/报价/采购/合同讨论就成立”。Prompt 只负责分别抽取商务讨论 Signal 与需求有效性相关 Signal，最终是否满足 S3 由 Rule Engine 判断。\n- 不允许因为存在 budget_discussed / quote_discussed / procurement_discussed / contract_terms_discussed 就隐含假设需求当前有效。\n- 如果需求已经明确取消、暂停或失效，应抽取 demand_invalidated。\n- 如果只是时间待定，不等于需求失效；Timeline unknown 不等于 demand_delayed。\n- demand_delayed 和 demand_invalidated 必须严格区分。\n\nEvidence Rules：\n- evidence_candidates.id 在一次 RawExtraction 中必须唯一，推荐按照原文首次出现顺序生成 E01, E02, E03...\n- quote 必须逐字来自输入原文，使用最短但语义完整片段；不要为了让字段成立改写原文。\n- 同一段 Evidence 可以被多个 candidate / stage_signal 引用。\n- 不要仅因为不同字段引用同一句话，就重复生成内容完全相同的 Evidence。\n- candidate 和 stage_signal 中的 evidence_id 必须能在 evidence_candidates.id 中找到对应对象。\n- 不要在 Prompt 中自行做最终证据校验；Evidence Validator 会做确定性定位和充分性检查。\n\nAmbiguity / Conflict Rules：\n- 模糊信息写入 ambiguities，必须使用字符串，不要使用对象。\n- 未提供金额、姓名、时间、权限时，必须标记未确认，不得补全。\n- 销售猜测如“我觉得/应该/可能/感觉”不得当作客户确认事实；可作为 attribution=sales 的模糊信息或 ambiguity，但不得作为阶段事实。\n- possible_conflicts 只记录候选冲突事实，不直接输出最终 Risk，不自行选择某一条作为真相，不自行消解冲突。\n- 冲突双方 Evidence 必须保留；例如“今年预算 50 万”与“今年目前没有预算”应两条事实都保留，形成 possible_conflicts，并引用两个 evidence_ids。\n- Current Validity 最小边界：明确历史事实用 historical；明确被撤销时保留历史事实并另抽当前负向事实；两个当前陈述互相冲突时保留双方 Evidence 和 possible_conflicts，不要在没有规则依据时随意决定谁是真相。\n- 不要因为后文有负向事实就漏掉真实发生过的历史商务事实。“之前讨论过预算，但客户说项目暂停”应同时抽取 budget_discussed(current_validity=historical) 和 demand_invalidated(polarity=negative,current_validity=active)。\n- budget_discussed 可因后文无预算而 historical/invalidated，但 solution_evaluation 与 budget_discussed 要分别判断 current_validity。\n- 如果后文只是出现预算冲突、无预算或明年再看，不要把前文“可以评估方案”的 solution_evaluation 标为 historical；除非客户明确撤回方案评估，否则 current_validity 应为 active。\n\nPositive / Negative Boundary：\n- 可以形成 Stage Signal：包含完整业务主谓含义，完整语义的短句，例如“客户问了报价”“客户说需要走采购流程”“项目已经进入内部审批”“客户说下周进入供应商评审”。\n- 不能形成 Stage Signal：只有孤立词语，例如“报价”“预算”“审批”“采购”“合同”；或销售自己的猜测，例如“我觉得客户应该快审批了”。\n- 模糊未来可能要标 explicitness=ambiguous 或 current_validity=unknown，不得伪装成明确 active fact。\n- 拜访记录直接陈述客观推进状态但没有明确说话人时，例如“项目已经进入内部立项流程”“合同已签”，attribution 使用 third_party；不要用 unknown。\n\n示例对象：\n{\n  \"candidate_needs\": [{\"value\":\"客服工单处理慢\", \"evidence_id\":\"E01\", \"attribution\":\"customer\", \"explicitness\":\"explicit\", \"polarity\":\"positive\", \"current_validity\":\"active\"}],\n  \"candidate_next_actions\": [{\"action\":\"安排产品 Demo\", \"owner\":null, \"time\":\"下周四\", \"evidence_id\":\"E02\", \"attribution\":\"customer\", \"explicitness\":\"explicit\"}],\n  \"stage_signals\": [{\"signal_type\":\"demo_agreed\", \"explicitness\":\"explicit\", \"polarity\":\"positive\", \"attribution\":\"customer\", \"current_validity\":\"active\", \"evidence_id\":\"E02\"}],\n  \"evidence_candidates\": [{\"id\":\"E01\", \"quote\":\"客户说客服工单处理慢\", \"field\":\"customer_needs\"}],\n  \"ambiguities\": [\"next_action.owner: Demo 负责人未确认\"]\n}\n"
+          },
+          {
+            "role": "user",
+            "content": "抽取以下销售拜访记录为 RawExtraction json：\n客户已经完成内部审批，最终确认采用我们的方案。双方合同已经签署完成，正式订单也已经确认。项目计划下月启动实施，由客户 IT 团队配合上线。"
+          }
+        ],
+        "response_format": {
+          "type": "json_object"
+        },
+        "temperature": 0,
+        "max_tokens": 2048,
+        "http_status": 200,
+        "usage": {
+          "prompt_tokens": 3535,
+          "completion_tokens": 457,
+          "total_tokens": 3992,
+          "prompt_tokens_details": {
+            "cached_tokens": 3456
+          },
+          "prompt_cache_hit_tokens": 3456,
+          "prompt_cache_miss_tokens": 79
+        },
+        "raw_content": "{\n  \"candidate_needs\": [],\n  \"candidate_scenarios\": [],\n  \"candidate_budget\": [],\n  \"candidate_people\": [],\n  \"candidate_timeline\": [\n    {\n      \"value\": \"下月启动实施\",\n      \"evidence_id\": \"E04\",\n      \"attribution\": \"third_party\",\n      \"explicitness\": \"explicit\",\n      \"polarity\": \"positive\",\n      \"current_validity\": \"active\"\n    }\n  ],\n  \"candidate_next_actions\": [],\n  \"stage_signals\": [\n    {\n      \"signal_type\": \"internal_project_approval\",\n      \"explicitness\": \"explicit\",\n      \"polarity\": \"positive\",\n      \"attribution\": \"third_party\",\n      \"current_validity\": \"active\",\n      \"evidence_id\": \"E01\"\n    },\n    {\n      \"signal_type\": \"contract_signed\",\n      \"explicitness\": \"explicit\",\n      \"polarity\": \"positive\",\n      \"attribution\": \"third_party\",\n      \"current_validity\": \"active\",\n      \"evidence_id\": \"E02\"\n    },\n    {\n      \"signal_type\": \"order_confirmed\",\n      \"explicitness\": \"explicit\",\n      \"polarity\": \"positive\",\n      \"attribution\": \"third_party\",\n      \"current_validity\": \"active\",\n      \"evidence_id\": \"E03\"\n    }\n  ],\n  \"ambiguities\": [],\n  \"possible_conflicts\": [],\n  \"evidence_candidates\": [\n    {\n      \"id\": \"E01\",\n      \"quote\": \"客户已经完成内部审批\",\n      \"field\": \"stage_signal\"\n    },\n    {\n      \"id\": \"E02\",\n      \"quote\": \"双方合同已经签署完成\",\n      \"field\": \"stage_signal\"\n    },\n    {\n      \"id\": \"E03\",\n      \"quote\": \"正式订单也已经确认\",\n      \"field\": \"stage_signal\"\n    },\n    {\n      \"id\": \"E04\",\n      \"quote\": \"项目计划下月启动实施\",\n      \"field\": \"candidate_timeline\"\n    }\n  ]\n}"
+      },
+      "raw_extraction": {
+        "candidate_needs": [],
+        "candidate_scenarios": [],
+        "candidate_budget": [],
+        "candidate_people": [],
+        "candidate_timeline": [
+          {
+            "value": "下月启动实施",
+            "evidence_id": "E04",
+            "attribution": "third_party",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "current_validity": "active"
+          }
+        ],
+        "candidate_next_actions": [],
+        "stage_signals": [
+          {
+            "signal_type": "internal_project_approval",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "attribution": "third_party",
+            "current_validity": "active",
+            "evidence_id": "E01"
+          },
+          {
+            "signal_type": "contract_signed",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "attribution": "third_party",
+            "current_validity": "active",
+            "evidence_id": "E02"
+          },
+          {
+            "signal_type": "order_confirmed",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "attribution": "third_party",
+            "current_validity": "active",
+            "evidence_id": "E03"
+          }
+        ],
+        "ambiguities": [],
+        "possible_conflicts": [],
+        "evidence_candidates": [
+          {
+            "id": "E01",
+            "quote": "客户已经完成内部审批",
+            "field": "stage_signal"
+          },
+          {
+            "id": "E02",
+            "quote": "双方合同已经签署完成",
+            "field": "stage_signal"
+          },
+          {
+            "id": "E03",
+            "quote": "正式订单也已经确认",
+            "field": "stage_signal"
+          },
+          {
+            "id": "E04",
+            "quote": "项目计划下月启动实施",
+            "field": "candidate_timeline"
+          }
+        ]
+      },
+      "api_response": {
+        "analysis_id": "19e7df22-3a78-4184-932f-9be7ea21ee9c",
+        "revision": 1,
+        "status": "complete",
+        "summary": "当前商机阶段为 S5（赢单签约）；核心需求与场景：未确认；已确认推进动作：未明确；最重要未确认信息：预算未确认。",
+        "stage": {
+          "code": "S5",
+          "label": "赢单签约",
+          "evidence_status": "sufficient",
+          "reason": "合同或正式订单已确认。",
+          "evidence_ids": [
+            "E03"
+          ]
+        },
+        "crm_fields": {
+          "customer_needs": [],
+          "core_scenarios": [],
+          "budget": {
+            "value": null,
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供预算金额、预算范围或明确预算安排。"
+          },
+          "decision_maker": {
+            "name": null,
+            "role": null,
+            "status": "unknown",
+            "authority_confirmed": false,
+            "evidence_ids": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          "influencers": [],
+          "timeline": {
+            "value": "下月启动实施",
+            "status": "confirmed",
+            "evidence_ids": [
+              "E04"
+            ],
+            "conflicting_values": [],
+            "reason": "该信息来自客户或第三方明确表达，并且原文依据有效。"
+          }
+        },
+        "opportunity_risks": [],
+        "analysis_warnings": [],
+        "confirmed_next_action": null,
+        "recommended_next_actions": [],
+        "unconfirmed_info": [
+          {
+            "value": "预算未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供预算金额、预算范围或明确预算安排。"
+          },
+          {
+            "value": "决策人或决策权限未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          {
+            "value": "客户已确认下一步行动未明确",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未出现客户已经确认的下一步动作、负责人或时间。"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "E01",
+            "quote": "客户已经完成内部审批",
+            "start_char": 0,
+            "end_char": 10,
+            "field": "stage_signal",
+            "valid": true,
+            "sufficient": true,
+            "insufficiency_reason": null
+          },
+          {
+            "id": "E02",
+            "quote": "双方合同已经签署完成",
+            "start_char": 23,
+            "end_char": 33,
+            "field": "stage_signal",
+            "valid": true,
+            "sufficient": true,
+            "insufficiency_reason": null
+          },
+          {
+            "id": "E03",
+            "quote": "正式订单也已经确认",
+            "start_char": 34,
+            "end_char": 43,
+            "field": "stage_signal",
+            "valid": true,
+            "sufficient": true,
+            "insufficiency_reason": null
+          },
+          {
+            "id": "E04",
+            "quote": "项目计划下月启动实施",
+            "start_char": 44,
+            "end_char": 54,
+            "field": "candidate_timeline",
+            "valid": true,
+            "sufficient": true,
+            "insufficiency_reason": null
+          }
+        ],
+        "clarification": null,
+        "developer_details": {
+          "stage_signals": [
+            {
+              "signal_type": "internal_project_approval",
+              "explicitness": "explicit",
+              "polarity": "positive",
+              "attribution": "third_party",
+              "current_validity": "active",
+              "evidence_id": "E01"
+            },
+            {
+              "signal_type": "contract_signed",
+              "explicitness": "explicit",
+              "polarity": "positive",
+              "attribution": "third_party",
+              "current_validity": "active",
+              "evidence_id": "E02"
+            },
+            {
+              "signal_type": "order_confirmed",
+              "explicitness": "explicit",
+              "polarity": "positive",
+              "attribution": "third_party",
+              "current_validity": "active",
+              "evidence_id": "E03"
+            }
+          ],
+          "valid_evidence_ids": [
+            "E01",
+            "E02",
+            "E03",
+            "E04"
+          ],
+          "sufficient_evidence_ids": [
+            "E01",
+            "E02",
+            "E03",
+            "E04"
+          ],
+          "input_summary": "客户已经完成内部审批，最终确认采用我们的方案。双方合同已经签署完成，正式订单也已经确认。项目计划下月启动实施，由客户 IT 团队配合上线。",
+          "provider": "deepseek",
+          "model": "deepseek-v4-flash",
+          "latency_ms": 3687
+        }
+      },
+      "validator_rule_trace": {
+        "stage_signals": [
+          {
+            "signal_type": "internal_project_approval",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "attribution": "third_party",
+            "current_validity": "active",
+            "evidence_id": "E01"
+          },
+          {
+            "signal_type": "contract_signed",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "attribution": "third_party",
+            "current_validity": "active",
+            "evidence_id": "E02"
+          },
+          {
+            "signal_type": "order_confirmed",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "attribution": "third_party",
+            "current_validity": "active",
+            "evidence_id": "E03"
+          }
+        ],
+        "valid_evidence_ids": [
+          "E01",
+          "E02",
+          "E03",
+          "E04"
+        ],
+        "sufficient_evidence_ids": [
+          "E01",
+          "E02",
+          "E03",
+          "E04"
+        ],
+        "stage": {
+          "code": "S5",
+          "label": "赢单签约",
+          "evidence_status": "sufficient",
+          "reason": "合同或正式订单已确认。",
+          "evidence_ids": [
+            "E03"
+          ]
+        },
+        "crm_fields": {
+          "customer_needs": [],
+          "core_scenarios": [],
+          "budget": {
+            "value": null,
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供预算金额、预算范围或明确预算安排。"
+          },
+          "decision_maker": {
+            "name": null,
+            "role": null,
+            "status": "unknown",
+            "authority_confirmed": false,
+            "evidence_ids": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          "influencers": [],
+          "timeline": {
+            "value": "下月启动实施",
+            "status": "confirmed",
+            "evidence_ids": [
+              "E04"
+            ],
+            "conflicting_values": [],
+            "reason": "该信息来自客户或第三方明确表达，并且原文依据有效。"
+          }
+        },
+        "opportunity_risks": [],
+        "analysis_warnings": [],
+        "confirmed_next_action": null,
+        "recommended_next_actions": [],
+        "unconfirmed_info": [
+          {
+            "value": "预算未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供预算金额、预算范围或明确预算安排。"
+          },
+          {
+            "value": "决策人或决策权限未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          {
+            "value": "客户已确认下一步行动未明确",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未出现客户已经确认的下一步动作、负责人或时间。"
+          }
+        ]
+      },
+      "field_assessment": [
+        [
+          "客户需求",
+          "输入未说明具体业务痛点，空或待确认可接受；不得编造需求",
+          "空",
+          "一致",
+          "未编造需求，符合事实边界。"
+        ],
+        [
+          "核心场景",
+          "可为空或不得编造具体业务场景",
+          "空",
+          "一致",
+          "未把“IT 团队配合上线”误写成购买场景。"
+        ],
+        [
+          "预算",
+          "未提及预算，待确认",
+          "待确认，reason=本次记录未提供预算金额、预算范围或明确预算安排",
+          "一致",
+          "无幻觉预算。"
+        ],
+        [
+          "决策人",
+          "未出现具体决策人姓名，待确认",
+          "待确认，reason=未明确最终审批、拍板或购买决策权限",
+          "一致",
+          "无人物编造。"
+        ],
+        [
+          "影响人",
+          "客户 IT 团队配合上线不等于购买影响人",
+          "空",
+          "一致",
+          "没有把实施配合方误判为影响人。"
+        ],
+        [
+          "时间计划",
+          "下月启动实施",
+          "下月启动实施，confirmed，evidence=项目计划下月启动实施",
+          "一致",
+          "Timeline value 粒度正确，包含时间和业务里程碑。"
+        ],
+        [
+          "商机阶段",
+          "S5 赢单签约",
+          "S5 · 赢单签约，reason=合同或正式订单已确认",
+          "一致",
+          "RawExtraction 同时抽到 contract_signed/order_confirmed；Rule Engine 高阶段优先。"
+        ],
+        [
+          "风险",
+          "无明确商机风险",
+          "无风险",
+          "一致",
+          "没有把预算/决策人未知升级为风险。"
+        ],
+        [
+          "下一步行动",
+          "不得错误生成客户已确认 Demo；可无推荐或温和建议",
+          "无 confirmed_next_action；无 recommended_next_actions",
+          "一致",
+          "S5 场景下未生成错误 Demo。"
+        ],
+        [
+          "未确认信息",
+          "可包含预算、决策人等缺失；未知不等于风险",
+          "预算、决策人、客户已确认下一步行动未明确",
+          "一致",
+          "未确认项与风险分离。"
+        ]
+      ],
+      "verdict": "PASS",
+      "issue_trace": "LLM RawExtraction 抽取 internal_project_approval、contract_signed、order_confirmed、timeline；Evidence 均定位有效；Rule Engine 因 S5 信号返回 S5。",
+      "open_issues": []
+    },
+    {
+      "case_id": "Case7",
+      "original_input": "今天和客户沟通后，我感觉客户挺感兴趣，应该很快会进入内部审批。王总在会上问了几个产品功能问题，我觉得他可能就是最终决策人。客户没有明确提到预算，也没有确认下一次会议时间。",
+      "expected": {
+        "客户需求": "无明确客户需求，待确认或空；不得把销售感觉当需求。",
+        "核心场景": "无明确使用场景，待确认或空。",
+        "预算": "客户未明确提到预算，待确认。",
+        "决策人": "王总不能被 confirmed decision maker；最多候选/部分待确认或未知。",
+        "影响人": "王总问功能问题不足以成为影响人。",
+        "时间计划": "未确认下一次会议时间，应待确认。",
+        "商机阶段": "不得 S4；一般应为 S0 或信息不足，但该输入有沟通事实，可 S0。",
+        "风险": "无明确负面商机风险；未知项进入未确认信息。",
+        "下一步行动": "不得生成客户已确认下一步；AI建议应围绕澄清需求/推进信息。",
+        "未确认信息": "预算、决策人、时间计划、客户已确认下一步应待确认。"
+      },
+      "api_status_code": 200,
+      "schema_success": true,
+      "schema_error": null,
+      "llm_trace": {
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "request_messages": [
+          {
+            "role": "system",
+            "content": "你是销售拜访记录 RawExtraction 抽取器。必须只输出 json 对象，不要 Markdown，不要解释。\n\nTask Contract：\n你的目标是将非结构化销售拜访记录转换为可供 Evidence Validator 和 Rule Engine 使用的 RawExtraction 结构化事实集合。所有输出必须忠于原文、可追溯、不可补全。你负责回答“记录里实际表达了什么”，而不是“按照业务规则最终应该得出什么结论”。\n- 只抽取 candidate_needs、candidate_scenarios、candidate_budget、candidate_people、candidate_timeline、candidate_next_actions、stage_signals、ambiguities、possible_conflicts、evidence_candidates。\n- 不要输出最终 S0-S5、status、OpportunityRisk 或 ValidatedOpportunity。\n- S0 不需要新增 Stage Signal；S0 由 Rule Engine 在没有满足更高阶段且没有明确需求时兜底判断。\n- RawExtraction 只抽取能支持阶段判断的事实和 Signal，不直接输出 S0-S5。\n\nOutput Schema：\n- attribution: customer | sales | third_party | unknown\n- explicitness: explicit | ambiguous\n- polarity: positive | negative\n- current_validity: active | historical | invalidated | unknown\n- candidate_people.kind: decision_maker | influencer | unknown\n- stage_signal.signal_type 只能是：need_identified, demo_agreed, trial_agreed, technical_exchange_agreed, solution_evaluation, budget_discussed, quote_discussed, procurement_discussed, contract_terms_discussed, internal_project_approval, vendor_decision, contract_signed, order_confirmed, demand_invalidated, budget_unavailable, demand_delayed\n- candidate_needs / candidate_scenarios / candidate_budget / candidate_timeline 的每个对象只能使用：value, evidence_id, attribution, explicitness, polarity, current_validity。\n- candidate_people 的每个对象只能使用：name, role, kind, authority_confirmed, evidence_id, attribution, explicitness。\n- candidate_next_actions 的每个对象只能使用：action, owner, time, evidence_id, attribution, explicitness。\n- stage_signals 的每个对象只能使用：signal_type, explicitness, polarity, attribution, current_validity, evidence_id。\n- evidence_candidates 的每个对象只能使用：id, quote, field。\n- possible_conflicts 的每个对象只能使用：field, description, evidence_ids。\n- ambiguities 必须是字符串数组 list[str]，不要输出对象。例如：\"budget: 客户确认有预算，但金额未确认\"。\n- 禁止使用 description/scenario/event/date/due_date/budget/evidence_ids 代替 candidate 字段中的 value/evidence_id。candidate 字段必须是单数 evidence_id。\n- 数组字段没有内容时返回 []，不要返回 null、缺失字段、“未确认”或自定义字符串。\n\nJSON 骨架：\n{\n  \"candidate_needs\": [],\n  \"candidate_scenarios\": [],\n  \"candidate_budget\": [],\n  \"candidate_people\": [],\n  \"candidate_timeline\": [],\n  \"candidate_next_actions\": [],\n  \"stage_signals\": [],\n  \"ambiguities\": [],\n  \"possible_conflicts\": [],\n  \"evidence_candidates\": []\n}\n\nField Semantics：\n- candidate_needs 表示客户明确表达的业务问题、痛点、改善目标、能力需求或希望解决的问题。Need 回答“客户想解决什么问题 / 达成什么目标”。例如“客服工单处理太慢”“希望减少人工处理”“知识检索准确率需要提高”。\n- candidate_scenarios 表示产品 / 方案准备落地或使用的具体业务场景、流程、部门或环节。Scenario 回答“能力具体用在哪里”。例如“售后客服知识库问答”“销售拜访纪要自动整理”“内部 IT 服务台”“采购合同审核场景”。\n- 一句话确实同时包含 Need 和 Scenario 时允许分别抽取，但必须分别指向能够支持对应含义的 Evidence。不要为了填字段而强行把 Need 推断成 Scenario，反之亦然。\n- candidate_budget.value 保留预算金额、预算范围或预算存在性本身及必要限定词，例如“约 50 万”“不超过 30 万”“至少 80 万”“30 到 50 万之间”“今年有预算”。不要包含“客户表示”“今年有”“预算为”“预算已经落实为”等叙述性外壳；也不要自行标准化金额、换算单位或取区间中位数。“大约 50 万”中的“大约”不能丢失。value 可以比 evidence quote 更短，但必须忠实来自 quote 的业务含义。\n- “今年有预算”可以抽取预算存在这一事实；如果没有金额，不得补金额，并在 ambiguities 中写入金额未确认。\n- candidate_people.kind 必须基于原文角色证据，不得基于职位称呼、人物重要程度或“总”字推断。所有出现的人名或称呼（如王总、李总、张经理、IT 王工）都必须进入 candidate_people，即使只是在“王总说...”中出现。\n- 如果原文只说明某人参与沟通、提出需求、安排 Demo、协调推进，但没有说明其最终决策权限，则 kind=unknown、role=null 或按原文角色填写、authority_confirmed=false。示例：原文“王总说下周四可以安排一次产品 Demo”时，candidate_people 应包含 {\"name\":\"王总\",\"role\":null,\"kind\":\"unknown\",\"authority_confirmed\":false,\"evidence_id\":\"E01\",\"attribution\":\"customer\",\"explicitness\":\"explicit\"}。\n- 只有存在明确角色/权限证据，例如“最终由王总拍板”“王总负责最终审批”“王总是这个项目的决策人”等语义等价表达，才允许 kind=decision_maker 且 authority_confirmed=true。\n- Influencer 指没有明确最终决策权限，但根据原文证据承担会实质影响方案 / 购买判断的角色，例如业务需求负责人、技术评估负责人、方案评估参与者、PoC / 试用评价负责人、采购评审参与者、正式供应商选型 / 比选参与者。\n- 如果明确说明某人参与评估、技术沟通、采购、业务需求梳理等，但没有最终决策权限，应按证据标为 influencer 或 unknown，不得标为 confirmed decision maker。正例：“IT 王工负责技术方案评估”可以 kind=influencer。反例：仅出现人物姓名、参加会议、听 Demo、协调会议、安排 Demo 时间、职位较高或被称为“总 / 经理”，不足以成为 influencer。\n- “业务负责人最终审批”如果姓名没有出现，不得自行猜测姓名，应在 ambiguities 中记录“decision_maker: 决策人姓名未确认”。\n- candidate_timeline.value 忠实抽取时间计划。若原文包含“时间 + 对应业务动作或里程碑”，value 应保留完整业务计划，例如“下季度上线”“本月底完成供应商选择”“下个月完成商务评估”；不要只抽“本月底”“下个月”等孤立时间词。如果原文只有纯时间、没有明确动作，则只保留该时间表达。不得自行生成日期或补充原文没有的动作；具体日期/时间未确认时写入 ambiguities。value 可以比 evidence quote 更短或相同，但不能丢失时间对应的业务动作。\n- candidate_next_actions 只能来自客户明确约定或拜访记录明确记载的已确认动作。AI 自己认为“下一步应该做什么”不是 candidate_next_actions。\n- 如果原文只明确“下次安排 Demo”，但未说明负责人和时间，owner/time 使用 null，并在 ambiguities 中记录负责人/时间缺失。不得凭空补 owner 或 time。\n\nStage Signal Scan：\n输出前请在内部逐项检查下面所有 Stage Signal 类型。不要输出检查过程，只输出命中的 stage_signals。完整短句也可以形成 signal；禁止的是孤立关键词触发。\n\nStage Signal 业务语义定义：\n- need_identified：客户明确表达业务问题、痛点、需求、目标或使用场景。例如客服工单处理慢、希望减少人工、想覆盖售后知识库场景。\n- demo_agreed：客户明确同意、约定、可以安排或已经安排 Demo / 产品演示。不是只有出现“Demo”才触发；“王总说下周可以给业务团队演示一下产品”也属于 demo_agreed。反例：“我们给客户介绍了 Demo 能力”不等于客户同意 Demo。\n- trial_agreed：客户明确同意、安排或计划试用 / PoC / 试点验证。\n- technical_exchange_agreed：客户明确同意、希望或安排技术交流、方案交流、拉技术同学沟通。\n- solution_evaluation：客户明确同意或表示可以评估某个产品、方案或技术方案。例如“客户表示可以评估一下客服自动化方案”。反例：“客户希望 AI 用在客服场景”只能说明 Need / Scenario，不自动代表客户已经同意方案评估。\n- budget_discussed：客户明确询问、说明、讨论或确认预算金额、预算范围、预算存在性或预算安排。正例：“客户确认今年有预算”“客户问我们预算规模通常需要多少”。反例：“销售准备下次和客户聊预算”不代表客户已经讨论预算。历史预算也要抽取，但 current_validity=historical 或 invalidated。\n- quote_discussed：客户明确询问、讨论、要求、收到或评估报价、价格、价格方案。正例：“客户问了报价”“客户正在评估我们的价格方案”。反例：“销售准备下次发报价”不代表客户已经讨论报价。\n- procurement_discussed：客户明确提到进入、正在进行、需要走、讨论或确认采购流程、采购申请、采购手续。短句“客户说需要走采购流程”应抽取 procurement_discussed。\n- contract_terms_discussed：客户、法务或采购明确讨论、查看、评审或确认合同条款、付款条款、法务条款。\n- internal_project_approval：客户明确表示项目已进入或正在进行内部立项、内部审批、审批流程、管理层审批；或明确某人负责最终审批。正例：“项目已经进入内部立项流程”“王总负责该项目最终审批”。反例：“销售觉得客户应该快审批了”“王总参加了产品 Demo”不得产生 internal_project_approval。\n- vendor_decision：客户明确表示进入供应商评审、供应商选择、供应商决策、选型或比选流程。正例：“客户说下周进入供应商评审”“目前正在进行三家供应商比选”。反例：“客户还在了解市场上的几家产品”不等于正式供应商决策流程。根据本题 S4 规则，“进入供应商评审”足以作为 vendor_decision signal；最终 Stage 仍由 Rule Engine 判断。\n- contract_signed：客户或记录明确表示合同已签、签完、完成签约。\n- order_confirmed：客户或记录明确表示正式订单已确认、订单已下、订单完成确认。\n- demand_invalidated：客户明确表示项目暂停、取消、需求失效、暂不推进。正例：“这个项目先取消，不继续推进了”。反例：“上线时间暂时待确认”不等于需求失效。\n- budget_unavailable：客户明确表示当前没有预算、暂无预算、今年没有预算。\n- demand_delayed：客户明确表达项目或计划延期、推迟、暂缓到以后、等明年再看、原计划向后移动。正例：“原计划 9 月上线，现在延期到明年”。反例：“具体上线时间还没有确定”“后面再约时间”“上线日期待确认”是 timeline unknown，不是 delay。产生 demand_delayed 时必须 polarity=negative，current_validity=active 或 unknown。\n\nS3 Demand Validity Boundary：\n- S3 不是“出现预算/报价/采购/合同讨论就成立”。Prompt 只负责分别抽取商务讨论 Signal 与需求有效性相关 Signal，最终是否满足 S3 由 Rule Engine 判断。\n- 不允许因为存在 budget_discussed / quote_discussed / procurement_discussed / contract_terms_discussed 就隐含假设需求当前有效。\n- 如果需求已经明确取消、暂停或失效，应抽取 demand_invalidated。\n- 如果只是时间待定，不等于需求失效；Timeline unknown 不等于 demand_delayed。\n- demand_delayed 和 demand_invalidated 必须严格区分。\n\nEvidence Rules：\n- evidence_candidates.id 在一次 RawExtraction 中必须唯一，推荐按照原文首次出现顺序生成 E01, E02, E03...\n- quote 必须逐字来自输入原文，使用最短但语义完整片段；不要为了让字段成立改写原文。\n- 同一段 Evidence 可以被多个 candidate / stage_signal 引用。\n- 不要仅因为不同字段引用同一句话，就重复生成内容完全相同的 Evidence。\n- candidate 和 stage_signal 中的 evidence_id 必须能在 evidence_candidates.id 中找到对应对象。\n- 不要在 Prompt 中自行做最终证据校验；Evidence Validator 会做确定性定位和充分性检查。\n\nAmbiguity / Conflict Rules：\n- 模糊信息写入 ambiguities，必须使用字符串，不要使用对象。\n- 未提供金额、姓名、时间、权限时，必须标记未确认，不得补全。\n- 销售猜测如“我觉得/应该/可能/感觉”不得当作客户确认事实；可作为 attribution=sales 的模糊信息或 ambiguity，但不得作为阶段事实。\n- possible_conflicts 只记录候选冲突事实，不直接输出最终 Risk，不自行选择某一条作为真相，不自行消解冲突。\n- 冲突双方 Evidence 必须保留；例如“今年预算 50 万”与“今年目前没有预算”应两条事实都保留，形成 possible_conflicts，并引用两个 evidence_ids。\n- Current Validity 最小边界：明确历史事实用 historical；明确被撤销时保留历史事实并另抽当前负向事实；两个当前陈述互相冲突时保留双方 Evidence 和 possible_conflicts，不要在没有规则依据时随意决定谁是真相。\n- 不要因为后文有负向事实就漏掉真实发生过的历史商务事实。“之前讨论过预算，但客户说项目暂停”应同时抽取 budget_discussed(current_validity=historical) 和 demand_invalidated(polarity=negative,current_validity=active)。\n- budget_discussed 可因后文无预算而 historical/invalidated，但 solution_evaluation 与 budget_discussed 要分别判断 current_validity。\n- 如果后文只是出现预算冲突、无预算或明年再看，不要把前文“可以评估方案”的 solution_evaluation 标为 historical；除非客户明确撤回方案评估，否则 current_validity 应为 active。\n\nPositive / Negative Boundary：\n- 可以形成 Stage Signal：包含完整业务主谓含义，完整语义的短句，例如“客户问了报价”“客户说需要走采购流程”“项目已经进入内部审批”“客户说下周进入供应商评审”。\n- 不能形成 Stage Signal：只有孤立词语，例如“报价”“预算”“审批”“采购”“合同”；或销售自己的猜测，例如“我觉得客户应该快审批了”。\n- 模糊未来可能要标 explicitness=ambiguous 或 current_validity=unknown，不得伪装成明确 active fact。\n- 拜访记录直接陈述客观推进状态但没有明确说话人时，例如“项目已经进入内部立项流程”“合同已签”，attribution 使用 third_party；不要用 unknown。\n\n示例对象：\n{\n  \"candidate_needs\": [{\"value\":\"客服工单处理慢\", \"evidence_id\":\"E01\", \"attribution\":\"customer\", \"explicitness\":\"explicit\", \"polarity\":\"positive\", \"current_validity\":\"active\"}],\n  \"candidate_next_actions\": [{\"action\":\"安排产品 Demo\", \"owner\":null, \"time\":\"下周四\", \"evidence_id\":\"E02\", \"attribution\":\"customer\", \"explicitness\":\"explicit\"}],\n  \"stage_signals\": [{\"signal_type\":\"demo_agreed\", \"explicitness\":\"explicit\", \"polarity\":\"positive\", \"attribution\":\"customer\", \"current_validity\":\"active\", \"evidence_id\":\"E02\"}],\n  \"evidence_candidates\": [{\"id\":\"E01\", \"quote\":\"客户说客服工单处理慢\", \"field\":\"customer_needs\"}],\n  \"ambiguities\": [\"next_action.owner: Demo 负责人未确认\"]\n}\n"
+          },
+          {
+            "role": "user",
+            "content": "抽取以下销售拜访记录为 RawExtraction json：\n今天和客户沟通后，我感觉客户挺感兴趣，应该很快会进入内部审批。王总在会上问了几个产品功能问题，我觉得他可能就是最终决策人。客户没有明确提到预算，也没有确认下一次会议时间。"
+          }
+        ],
+        "response_format": {
+          "type": "json_object"
+        },
+        "temperature": 0,
+        "max_tokens": 2048,
+        "http_status": 200,
+        "usage": {
+          "prompt_tokens": 3543,
+          "completion_tokens": 222,
+          "total_tokens": 3765,
+          "prompt_tokens_details": {
+            "cached_tokens": 3456
+          },
+          "prompt_cache_hit_tokens": 3456,
+          "prompt_cache_miss_tokens": 87
+        },
+        "raw_content": "{\n  \"candidate_needs\": [],\n  \"candidate_scenarios\": [],\n  \"candidate_budget\": [],\n  \"candidate_people\": [\n    {\n      \"name\": \"王总\",\n      \"role\": null,\n      \"kind\": \"unknown\",\n      \"authority_confirmed\": false,\n      \"evidence_id\": \"E01\",\n      \"attribution\": \"customer\",\n      \"explicitness\": \"explicit\"\n    }\n  ],\n  \"candidate_timeline\": [],\n  \"candidate_next_actions\": [],\n  \"stage_signals\": [],\n  \"ambiguities\": [\n    \"decision_maker: 王总是否为最终决策人未确认\",\n    \"budget: 客户未提及预算\",\n    \"next_action.time: 下一次会议时间未确认\"\n  ],\n  \"possible_conflicts\": [],\n  \"evidence_candidates\": [\n    {\n      \"id\": \"E01\",\n      \"quote\": \"王总在会上问了几个产品功能问题\",\n      \"field\": \"candidate_people\"\n    }\n  ]\n}"
+      },
+      "raw_extraction": {
+        "candidate_needs": [],
+        "candidate_scenarios": [],
+        "candidate_budget": [],
+        "candidate_people": [
+          {
+            "name": "王总",
+            "role": null,
+            "kind": "unknown",
+            "authority_confirmed": false,
+            "evidence_id": "E01",
+            "attribution": "customer",
+            "explicitness": "explicit"
+          }
+        ],
+        "candidate_timeline": [],
+        "candidate_next_actions": [],
+        "stage_signals": [],
+        "ambiguities": [
+          "decision_maker: 王总是否为最终决策人未确认",
+          "budget: 客户未提及预算",
+          "next_action.time: 下一次会议时间未确认"
+        ],
+        "possible_conflicts": [],
+        "evidence_candidates": [
+          {
+            "id": "E01",
+            "quote": "王总在会上问了几个产品功能问题",
+            "field": "candidate_people"
+          }
+        ]
+      },
+      "api_response": {
+        "analysis_id": "cab934e4-7f22-442a-adc2-a3d007258586",
+        "revision": 1,
+        "status": "unable_to_judge",
+        "summary": "当前销售记录信息不足，尚无法形成可靠商机阶段判断；输入信息过于残缺，无法可靠分析，需要补充客户需求、场景或推进状态。",
+        "stage": null,
+        "crm_fields": {
+          "customer_needs": [],
+          "core_scenarios": [],
+          "budget": {
+            "value": null,
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供预算金额、预算范围或明确预算安排。"
+          },
+          "decision_maker": {
+            "name": null,
+            "role": null,
+            "status": "unknown",
+            "authority_confirmed": false,
+            "evidence_ids": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          "influencers": [],
+          "timeline": {
+            "value": null,
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供明确推进时间或上线计划。"
+          }
+        },
+        "opportunity_risks": [],
+        "analysis_warnings": [
+          {
+            "type": "insufficient_input",
+            "severity": "high",
+            "description": "输入信息过于残缺，无法可靠分析。",
+            "evidence_ids": []
+          }
+        ],
+        "confirmed_next_action": null,
+        "recommended_next_actions": [],
+        "unconfirmed_info": [
+          {
+            "value": "预算未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供预算金额、预算范围或明确预算安排。"
+          },
+          {
+            "value": "决策人或决策权限未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          {
+            "value": "时间计划未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供明确推进时间或上线计划。"
+          },
+          {
+            "value": "客户已确认下一步行动未明确",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未出现客户已经确认的下一步动作、负责人或时间。"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "E01",
+            "quote": "王总在会上问了几个产品功能问题",
+            "start_char": 31,
+            "end_char": 46,
+            "field": "candidate_people",
+            "valid": true,
+            "sufficient": true,
+            "insufficiency_reason": null
+          }
+        ],
+        "clarification": {
+          "needed": true,
+          "questions": [
+            {
+              "field": "customer_needs",
+              "question": "客户当前具体有什么业务需求或使用场景？",
+              "priority": "high",
+              "reason": "当前文本不足以判断是否存在明确需求。"
+            },
+            {
+              "field": "stage",
+              "question": "“审批”是指已经进入内部审批，还是只讨论了审批流程？",
+              "priority": "high",
+              "reason": "单个关键词不能证明已进入 S4。"
+            }
+          ],
+          "max_questions": 3
+        },
+        "developer_details": {
+          "stage_signals": [],
+          "valid_evidence_ids": [
+            "E01"
+          ],
+          "sufficient_evidence_ids": [
+            "E01"
+          ],
+          "input_summary": "今天和客户沟通后，我感觉客户挺感兴趣，应该很快会进入内部审批。王总在会上问了几个产品功能问题，我觉得他可能就是最终决策人。客户没有明确提到预算，也没有确认下一…",
+          "provider": "deepseek",
+          "model": "deepseek-v4-flash",
+          "latency_ms": 2459
+        }
+      },
+      "validator_rule_trace": {
+        "stage_signals": [],
+        "valid_evidence_ids": [
+          "E01"
+        ],
+        "sufficient_evidence_ids": [
+          "E01"
+        ],
+        "stage": null,
+        "crm_fields": {
+          "customer_needs": [],
+          "core_scenarios": [],
+          "budget": {
+            "value": null,
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供预算金额、预算范围或明确预算安排。"
+          },
+          "decision_maker": {
+            "name": null,
+            "role": null,
+            "status": "unknown",
+            "authority_confirmed": false,
+            "evidence_ids": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          "influencers": [],
+          "timeline": {
+            "value": null,
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供明确推进时间或上线计划。"
+          }
+        },
+        "opportunity_risks": [],
+        "analysis_warnings": [
+          {
+            "type": "insufficient_input",
+            "severity": "high",
+            "description": "输入信息过于残缺，无法可靠分析。",
+            "evidence_ids": []
+          }
+        ],
+        "confirmed_next_action": null,
+        "recommended_next_actions": [],
+        "unconfirmed_info": [
+          {
+            "value": "预算未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供预算金额、预算范围或明确预算安排。"
+          },
+          {
+            "value": "决策人或决策权限未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          {
+            "value": "时间计划未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供明确推进时间或上线计划。"
+          },
+          {
+            "value": "客户已确认下一步行动未明确",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未出现客户已经确认的下一步动作、负责人或时间。"
+          }
+        ]
+      },
+      "field_assessment": [
+        [
+          "客户需求",
+          "无明确客户需求，待确认或空",
+          "空",
+          "一致",
+          "未把“挺感兴趣”或功能问题当成明确需求。"
+        ],
+        [
+          "核心场景",
+          "无明确使用场景，待确认或空",
+          "空",
+          "一致",
+          "未编造场景。"
+        ],
+        [
+          "预算",
+          "客户未明确提到预算，待确认",
+          "待确认",
+          "一致",
+          "无预算幻觉。"
+        ],
+        [
+          "决策人",
+          "王总不能 confirmed decision maker",
+          "待确认；RawExtraction 中王总 kind=unknown",
+          "一致",
+          "没有把销售猜测“可能是决策人”采纳为客户事实。"
+        ],
+        [
+          "影响人",
+          "问功能问题不足以成为影响人",
+          "空",
+          "一致",
+          "没有人物角色误判。"
+        ],
+        [
+          "时间计划",
+          "未确认下一次会议时间，应待确认",
+          "待确认",
+          "一致",
+          "无时间幻觉。"
+        ],
+        [
+          "商机阶段",
+          "不得 S4；可 S0 或信息不足",
+          "stage=null，status=unable_to_judge",
+          "部分一致",
+          "成功阻止 S4，但对“今天和客户沟通”这种初步接触没有兜底为 S0。首次发生在 Rule Engine 的 minimum analyzability gate。"
+        ],
+        [
+          "风险",
+          "无明确负面商机风险",
+          "无风险",
+          "一致",
+          "未知项未升级为风险。"
+        ],
+        [
+          "下一步行动",
+          "不得生成客户已确认下一步；AI建议围绕澄清需求",
+          "无 confirmed_next_action；无 recommended_next_actions",
+          "部分一致",
+          "未生成错误确认行动，但 unable_to_judge 状态下当前规则不生成推荐行动。"
+        ],
+        [
+          "未确认信息",
+          "预算、决策人、时间计划、客户已确认下一步应待确认",
+          "四项均进入 unconfirmed_info",
+          "一致",
+          "待确认项完整。"
+        ]
+      ],
+      "verdict": "PARTIAL PASS",
+      "issue_trace": "LLM RawExtraction 正确拒绝 sales attribution 的审批猜测与决策人猜测，只保留王总为 unknown person；无 stage_signals。Evidence Validator 正常。Rule Engine 的 _minimum_analyzable 对无有效 signal 文本只认“拜访/介绍/加微信/初步接触/认识/接触”，未覆盖“沟通”，因此返回 stage=null。",
+      "open_issues": [
+        "S0 初步接触表达覆盖不足：非 LLM 问题，直接发生层为 Rule Engine minimum analyzability。"
+      ]
+    },
+    {
+      "case_id": "Case8",
+      "original_input": "客户上午表示今年项目预算大约 60 万，可以继续推进。下午再次沟通时，客户又表示今年预算目前已经被冻结，暂时无法确认是否还能继续采购。产品方案本身客户仍表示认可。",
+      "expected": {
+        "客户需求": "可识别项目/方案继续推进相关信息；无具体痛点时不得编造。",
+        "核心场景": "无具体业务场景，待确认或空。",
+        "预算": "应为 conflict，不得只选择 60 万或预算冻结作为最终事实。",
+        "决策人": "未提及，待确认。",
+        "影响人": "未提及，空。",
+        "时间计划": "未提及明确时间计划，待确认。",
+        "商机阶段": "不能机械稳定 S3；如识别方案认可，可保留 S2，并 status need_confirmation。",
+        "风险": "应包含预算冲突/预算冻结/继续采购不确定等高影响风险。",
+        "下一步行动": "应 blocker-first，优先确认预算是否仍有效和项目是否继续采购；不得直接推进报价或 Demo。",
+        "未确认信息": "预算冲突、决策人、时间计划、客户已确认下一步等应体现。"
+      },
+      "api_status_code": 200,
+      "schema_success": true,
+      "schema_error": null,
+      "llm_trace": {
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "request_messages": [
+          {
+            "role": "system",
+            "content": "你是销售拜访记录 RawExtraction 抽取器。必须只输出 json 对象，不要 Markdown，不要解释。\n\nTask Contract：\n你的目标是将非结构化销售拜访记录转换为可供 Evidence Validator 和 Rule Engine 使用的 RawExtraction 结构化事实集合。所有输出必须忠于原文、可追溯、不可补全。你负责回答“记录里实际表达了什么”，而不是“按照业务规则最终应该得出什么结论”。\n- 只抽取 candidate_needs、candidate_scenarios、candidate_budget、candidate_people、candidate_timeline、candidate_next_actions、stage_signals、ambiguities、possible_conflicts、evidence_candidates。\n- 不要输出最终 S0-S5、status、OpportunityRisk 或 ValidatedOpportunity。\n- S0 不需要新增 Stage Signal；S0 由 Rule Engine 在没有满足更高阶段且没有明确需求时兜底判断。\n- RawExtraction 只抽取能支持阶段判断的事实和 Signal，不直接输出 S0-S5。\n\nOutput Schema：\n- attribution: customer | sales | third_party | unknown\n- explicitness: explicit | ambiguous\n- polarity: positive | negative\n- current_validity: active | historical | invalidated | unknown\n- candidate_people.kind: decision_maker | influencer | unknown\n- stage_signal.signal_type 只能是：need_identified, demo_agreed, trial_agreed, technical_exchange_agreed, solution_evaluation, budget_discussed, quote_discussed, procurement_discussed, contract_terms_discussed, internal_project_approval, vendor_decision, contract_signed, order_confirmed, demand_invalidated, budget_unavailable, demand_delayed\n- candidate_needs / candidate_scenarios / candidate_budget / candidate_timeline 的每个对象只能使用：value, evidence_id, attribution, explicitness, polarity, current_validity。\n- candidate_people 的每个对象只能使用：name, role, kind, authority_confirmed, evidence_id, attribution, explicitness。\n- candidate_next_actions 的每个对象只能使用：action, owner, time, evidence_id, attribution, explicitness。\n- stage_signals 的每个对象只能使用：signal_type, explicitness, polarity, attribution, current_validity, evidence_id。\n- evidence_candidates 的每个对象只能使用：id, quote, field。\n- possible_conflicts 的每个对象只能使用：field, description, evidence_ids。\n- ambiguities 必须是字符串数组 list[str]，不要输出对象。例如：\"budget: 客户确认有预算，但金额未确认\"。\n- 禁止使用 description/scenario/event/date/due_date/budget/evidence_ids 代替 candidate 字段中的 value/evidence_id。candidate 字段必须是单数 evidence_id。\n- 数组字段没有内容时返回 []，不要返回 null、缺失字段、“未确认”或自定义字符串。\n\nJSON 骨架：\n{\n  \"candidate_needs\": [],\n  \"candidate_scenarios\": [],\n  \"candidate_budget\": [],\n  \"candidate_people\": [],\n  \"candidate_timeline\": [],\n  \"candidate_next_actions\": [],\n  \"stage_signals\": [],\n  \"ambiguities\": [],\n  \"possible_conflicts\": [],\n  \"evidence_candidates\": []\n}\n\nField Semantics：\n- candidate_needs 表示客户明确表达的业务问题、痛点、改善目标、能力需求或希望解决的问题。Need 回答“客户想解决什么问题 / 达成什么目标”。例如“客服工单处理太慢”“希望减少人工处理”“知识检索准确率需要提高”。\n- candidate_scenarios 表示产品 / 方案准备落地或使用的具体业务场景、流程、部门或环节。Scenario 回答“能力具体用在哪里”。例如“售后客服知识库问答”“销售拜访纪要自动整理”“内部 IT 服务台”“采购合同审核场景”。\n- 一句话确实同时包含 Need 和 Scenario 时允许分别抽取，但必须分别指向能够支持对应含义的 Evidence。不要为了填字段而强行把 Need 推断成 Scenario，反之亦然。\n- candidate_budget.value 保留预算金额、预算范围或预算存在性本身及必要限定词，例如“约 50 万”“不超过 30 万”“至少 80 万”“30 到 50 万之间”“今年有预算”。不要包含“客户表示”“今年有”“预算为”“预算已经落实为”等叙述性外壳；也不要自行标准化金额、换算单位或取区间中位数。“大约 50 万”中的“大约”不能丢失。value 可以比 evidence quote 更短，但必须忠实来自 quote 的业务含义。\n- “今年有预算”可以抽取预算存在这一事实；如果没有金额，不得补金额，并在 ambiguities 中写入金额未确认。\n- candidate_people.kind 必须基于原文角色证据，不得基于职位称呼、人物重要程度或“总”字推断。所有出现的人名或称呼（如王总、李总、张经理、IT 王工）都必须进入 candidate_people，即使只是在“王总说...”中出现。\n- 如果原文只说明某人参与沟通、提出需求、安排 Demo、协调推进，但没有说明其最终决策权限，则 kind=unknown、role=null 或按原文角色填写、authority_confirmed=false。示例：原文“王总说下周四可以安排一次产品 Demo”时，candidate_people 应包含 {\"name\":\"王总\",\"role\":null,\"kind\":\"unknown\",\"authority_confirmed\":false,\"evidence_id\":\"E01\",\"attribution\":\"customer\",\"explicitness\":\"explicit\"}。\n- 只有存在明确角色/权限证据，例如“最终由王总拍板”“王总负责最终审批”“王总是这个项目的决策人”等语义等价表达，才允许 kind=decision_maker 且 authority_confirmed=true。\n- Influencer 指没有明确最终决策权限，但根据原文证据承担会实质影响方案 / 购买判断的角色，例如业务需求负责人、技术评估负责人、方案评估参与者、PoC / 试用评价负责人、采购评审参与者、正式供应商选型 / 比选参与者。\n- 如果明确说明某人参与评估、技术沟通、采购、业务需求梳理等，但没有最终决策权限，应按证据标为 influencer 或 unknown，不得标为 confirmed decision maker。正例：“IT 王工负责技术方案评估”可以 kind=influencer。反例：仅出现人物姓名、参加会议、听 Demo、协调会议、安排 Demo 时间、职位较高或被称为“总 / 经理”，不足以成为 influencer。\n- “业务负责人最终审批”如果姓名没有出现，不得自行猜测姓名，应在 ambiguities 中记录“decision_maker: 决策人姓名未确认”。\n- candidate_timeline.value 忠实抽取时间计划。若原文包含“时间 + 对应业务动作或里程碑”，value 应保留完整业务计划，例如“下季度上线”“本月底完成供应商选择”“下个月完成商务评估”；不要只抽“本月底”“下个月”等孤立时间词。如果原文只有纯时间、没有明确动作，则只保留该时间表达。不得自行生成日期或补充原文没有的动作；具体日期/时间未确认时写入 ambiguities。value 可以比 evidence quote 更短或相同，但不能丢失时间对应的业务动作。\n- candidate_next_actions 只能来自客户明确约定或拜访记录明确记载的已确认动作。AI 自己认为“下一步应该做什么”不是 candidate_next_actions。\n- 如果原文只明确“下次安排 Demo”，但未说明负责人和时间，owner/time 使用 null，并在 ambiguities 中记录负责人/时间缺失。不得凭空补 owner 或 time。\n\nStage Signal Scan：\n输出前请在内部逐项检查下面所有 Stage Signal 类型。不要输出检查过程，只输出命中的 stage_signals。完整短句也可以形成 signal；禁止的是孤立关键词触发。\n\nStage Signal 业务语义定义：\n- need_identified：客户明确表达业务问题、痛点、需求、目标或使用场景。例如客服工单处理慢、希望减少人工、想覆盖售后知识库场景。\n- demo_agreed：客户明确同意、约定、可以安排或已经安排 Demo / 产品演示。不是只有出现“Demo”才触发；“王总说下周可以给业务团队演示一下产品”也属于 demo_agreed。反例：“我们给客户介绍了 Demo 能力”不等于客户同意 Demo。\n- trial_agreed：客户明确同意、安排或计划试用 / PoC / 试点验证。\n- technical_exchange_agreed：客户明确同意、希望或安排技术交流、方案交流、拉技术同学沟通。\n- solution_evaluation：客户明确同意或表示可以评估某个产品、方案或技术方案。例如“客户表示可以评估一下客服自动化方案”。反例：“客户希望 AI 用在客服场景”只能说明 Need / Scenario，不自动代表客户已经同意方案评估。\n- budget_discussed：客户明确询问、说明、讨论或确认预算金额、预算范围、预算存在性或预算安排。正例：“客户确认今年有预算”“客户问我们预算规模通常需要多少”。反例：“销售准备下次和客户聊预算”不代表客户已经讨论预算。历史预算也要抽取，但 current_validity=historical 或 invalidated。\n- quote_discussed：客户明确询问、讨论、要求、收到或评估报价、价格、价格方案。正例：“客户问了报价”“客户正在评估我们的价格方案”。反例：“销售准备下次发报价”不代表客户已经讨论报价。\n- procurement_discussed：客户明确提到进入、正在进行、需要走、讨论或确认采购流程、采购申请、采购手续。短句“客户说需要走采购流程”应抽取 procurement_discussed。\n- contract_terms_discussed：客户、法务或采购明确讨论、查看、评审或确认合同条款、付款条款、法务条款。\n- internal_project_approval：客户明确表示项目已进入或正在进行内部立项、内部审批、审批流程、管理层审批；或明确某人负责最终审批。正例：“项目已经进入内部立项流程”“王总负责该项目最终审批”。反例：“销售觉得客户应该快审批了”“王总参加了产品 Demo”不得产生 internal_project_approval。\n- vendor_decision：客户明确表示进入供应商评审、供应商选择、供应商决策、选型或比选流程。正例：“客户说下周进入供应商评审”“目前正在进行三家供应商比选”。反例：“客户还在了解市场上的几家产品”不等于正式供应商决策流程。根据本题 S4 规则，“进入供应商评审”足以作为 vendor_decision signal；最终 Stage 仍由 Rule Engine 判断。\n- contract_signed：客户或记录明确表示合同已签、签完、完成签约。\n- order_confirmed：客户或记录明确表示正式订单已确认、订单已下、订单完成确认。\n- demand_invalidated：客户明确表示项目暂停、取消、需求失效、暂不推进。正例：“这个项目先取消，不继续推进了”。反例：“上线时间暂时待确认”不等于需求失效。\n- budget_unavailable：客户明确表示当前没有预算、暂无预算、今年没有预算。\n- demand_delayed：客户明确表达项目或计划延期、推迟、暂缓到以后、等明年再看、原计划向后移动。正例：“原计划 9 月上线，现在延期到明年”。反例：“具体上线时间还没有确定”“后面再约时间”“上线日期待确认”是 timeline unknown，不是 delay。产生 demand_delayed 时必须 polarity=negative，current_validity=active 或 unknown。\n\nS3 Demand Validity Boundary：\n- S3 不是“出现预算/报价/采购/合同讨论就成立”。Prompt 只负责分别抽取商务讨论 Signal 与需求有效性相关 Signal，最终是否满足 S3 由 Rule Engine 判断。\n- 不允许因为存在 budget_discussed / quote_discussed / procurement_discussed / contract_terms_discussed 就隐含假设需求当前有效。\n- 如果需求已经明确取消、暂停或失效，应抽取 demand_invalidated。\n- 如果只是时间待定，不等于需求失效；Timeline unknown 不等于 demand_delayed。\n- demand_delayed 和 demand_invalidated 必须严格区分。\n\nEvidence Rules：\n- evidence_candidates.id 在一次 RawExtraction 中必须唯一，推荐按照原文首次出现顺序生成 E01, E02, E03...\n- quote 必须逐字来自输入原文，使用最短但语义完整片段；不要为了让字段成立改写原文。\n- 同一段 Evidence 可以被多个 candidate / stage_signal 引用。\n- 不要仅因为不同字段引用同一句话，就重复生成内容完全相同的 Evidence。\n- candidate 和 stage_signal 中的 evidence_id 必须能在 evidence_candidates.id 中找到对应对象。\n- 不要在 Prompt 中自行做最终证据校验；Evidence Validator 会做确定性定位和充分性检查。\n\nAmbiguity / Conflict Rules：\n- 模糊信息写入 ambiguities，必须使用字符串，不要使用对象。\n- 未提供金额、姓名、时间、权限时，必须标记未确认，不得补全。\n- 销售猜测如“我觉得/应该/可能/感觉”不得当作客户确认事实；可作为 attribution=sales 的模糊信息或 ambiguity，但不得作为阶段事实。\n- possible_conflicts 只记录候选冲突事实，不直接输出最终 Risk，不自行选择某一条作为真相，不自行消解冲突。\n- 冲突双方 Evidence 必须保留；例如“今年预算 50 万”与“今年目前没有预算”应两条事实都保留，形成 possible_conflicts，并引用两个 evidence_ids。\n- Current Validity 最小边界：明确历史事实用 historical；明确被撤销时保留历史事实并另抽当前负向事实；两个当前陈述互相冲突时保留双方 Evidence 和 possible_conflicts，不要在没有规则依据时随意决定谁是真相。\n- 不要因为后文有负向事实就漏掉真实发生过的历史商务事实。“之前讨论过预算，但客户说项目暂停”应同时抽取 budget_discussed(current_validity=historical) 和 demand_invalidated(polarity=negative,current_validity=active)。\n- budget_discussed 可因后文无预算而 historical/invalidated，但 solution_evaluation 与 budget_discussed 要分别判断 current_validity。\n- 如果后文只是出现预算冲突、无预算或明年再看，不要把前文“可以评估方案”的 solution_evaluation 标为 historical；除非客户明确撤回方案评估，否则 current_validity 应为 active。\n\nPositive / Negative Boundary：\n- 可以形成 Stage Signal：包含完整业务主谓含义，完整语义的短句，例如“客户问了报价”“客户说需要走采购流程”“项目已经进入内部审批”“客户说下周进入供应商评审”。\n- 不能形成 Stage Signal：只有孤立词语，例如“报价”“预算”“审批”“采购”“合同”；或销售自己的猜测，例如“我觉得客户应该快审批了”。\n- 模糊未来可能要标 explicitness=ambiguous 或 current_validity=unknown，不得伪装成明确 active fact。\n- 拜访记录直接陈述客观推进状态但没有明确说话人时，例如“项目已经进入内部立项流程”“合同已签”，attribution 使用 third_party；不要用 unknown。\n\n示例对象：\n{\n  \"candidate_needs\": [{\"value\":\"客服工单处理慢\", \"evidence_id\":\"E01\", \"attribution\":\"customer\", \"explicitness\":\"explicit\", \"polarity\":\"positive\", \"current_validity\":\"active\"}],\n  \"candidate_next_actions\": [{\"action\":\"安排产品 Demo\", \"owner\":null, \"time\":\"下周四\", \"evidence_id\":\"E02\", \"attribution\":\"customer\", \"explicitness\":\"explicit\"}],\n  \"stage_signals\": [{\"signal_type\":\"demo_agreed\", \"explicitness\":\"explicit\", \"polarity\":\"positive\", \"attribution\":\"customer\", \"current_validity\":\"active\", \"evidence_id\":\"E02\"}],\n  \"evidence_candidates\": [{\"id\":\"E01\", \"quote\":\"客户说客服工单处理慢\", \"field\":\"customer_needs\"}],\n  \"ambiguities\": [\"next_action.owner: Demo 负责人未确认\"]\n}\n"
+          },
+          {
+            "role": "user",
+            "content": "抽取以下销售拜访记录为 RawExtraction json：\n客户上午表示今年项目预算大约 60 万，可以继续推进。下午再次沟通时，客户又表示今年预算目前已经被冻结，暂时无法确认是否还能继续采购。产品方案本身客户仍表示认可。"
+          }
+        ],
+        "response_format": {
+          "type": "json_object"
+        },
+        "temperature": 0,
+        "max_tokens": 2048,
+        "http_status": 200,
+        "usage": {
+          "prompt_tokens": 3543,
+          "completion_tokens": 590,
+          "total_tokens": 4133,
+          "prompt_tokens_details": {
+            "cached_tokens": 3456
+          },
+          "prompt_cache_hit_tokens": 3456,
+          "prompt_cache_miss_tokens": 87
+        },
+        "raw_content": "{\n  \"candidate_needs\": [],\n  \"candidate_scenarios\": [],\n  \"candidate_budget\": [\n    {\n      \"value\": \"大约 60 万\",\n      \"evidence_id\": \"E01\",\n      \"attribution\": \"customer\",\n      \"explicitness\": \"explicit\",\n      \"polarity\": \"positive\",\n      \"current_validity\": \"historical\"\n    },\n    {\n      \"value\": \"今年预算目前已经被冻结\",\n      \"evidence_id\": \"E02\",\n      \"attribution\": \"customer\",\n      \"explicitness\": \"explicit\",\n      \"polarity\": \"negative\",\n      \"current_validity\": \"active\"\n    }\n  ],\n  \"candidate_people\": [],\n  \"candidate_timeline\": [],\n  \"candidate_next_actions\": [],\n  \"stage_signals\": [\n    {\n      \"signal_type\": \"budget_discussed\",\n      \"explicitness\": \"explicit\",\n      \"polarity\": \"positive\",\n      \"attribution\": \"customer\",\n      \"current_validity\": \"historical\",\n      \"evidence_id\": \"E01\"\n    },\n    {\n      \"signal_type\": \"budget_unavailable\",\n      \"explicitness\": \"explicit\",\n      \"polarity\": \"negative\",\n      \"attribution\": \"customer\",\n      \"current_validity\": \"active\",\n      \"evidence_id\": \"E02\"\n    },\n    {\n      \"signal_type\": \"solution_evaluation\",\n      \"explicitness\": \"explicit\",\n      \"polarity\": \"positive\",\n      \"attribution\": \"customer\",\n      \"current_validity\": \"active\",\n      \"evidence_id\": \"E03\"\n    }\n  ],\n  \"ambiguities\": [\n    \"budget: 预算金额约 60 万，但预算被冻结，金额是否有效未确认\",\n    \"timeline: 项目推进时间未确认\"\n  ],\n  \"possible_conflicts\": [\n    {\n      \"field\": \"budget\",\n      \"description\": \"上午表示今年预算约 60 万，下午表示预算被冻结，无法确认是否继续采购\",\n      \"evidence_ids\": [\"E01\", \"E02\"]\n    }\n  ],\n  \"evidence_candidates\": [\n    {\n      \"id\": \"E01\",\n      \"quote\": \"客户上午表示今年项目预算大约 60 万，可以继续推进\",\n      \"field\": \"budget\"\n    },\n    {\n      \"id\": \"E02\",\n      \"quote\": \"客户又表示今年预算目前已经被冻结，暂时无法确认是否还能继续采购\",\n      \"field\": \"budget\"\n    },\n    {\n      \"id\": \"E03\",\n      \"quote\": \"产品方案本身客户仍表示认可\",\n      \"field\": \"solution_evaluation\"\n    }\n  ]\n}"
+      },
+      "raw_extraction": {
+        "candidate_needs": [],
+        "candidate_scenarios": [],
+        "candidate_budget": [
+          {
+            "value": "大约 60 万",
+            "evidence_id": "E01",
+            "attribution": "customer",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "current_validity": "historical"
+          },
+          {
+            "value": "今年预算目前已经被冻结",
+            "evidence_id": "E02",
+            "attribution": "customer",
+            "explicitness": "explicit",
+            "polarity": "negative",
+            "current_validity": "active"
+          }
+        ],
+        "candidate_people": [],
+        "candidate_timeline": [],
+        "candidate_next_actions": [],
+        "stage_signals": [
+          {
+            "signal_type": "budget_discussed",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "attribution": "customer",
+            "current_validity": "historical",
+            "evidence_id": "E01"
+          },
+          {
+            "signal_type": "budget_unavailable",
+            "explicitness": "explicit",
+            "polarity": "negative",
+            "attribution": "customer",
+            "current_validity": "active",
+            "evidence_id": "E02"
+          },
+          {
+            "signal_type": "solution_evaluation",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "attribution": "customer",
+            "current_validity": "active",
+            "evidence_id": "E03"
+          }
+        ],
+        "ambiguities": [
+          "budget: 预算金额约 60 万，但预算被冻结，金额是否有效未确认",
+          "timeline: 项目推进时间未确认"
+        ],
+        "possible_conflicts": [
+          {
+            "field": "budget",
+            "description": "上午表示今年预算约 60 万，下午表示预算被冻结，无法确认是否继续采购",
+            "evidence_ids": [
+              "E01",
+              "E02"
+            ]
+          }
+        ],
+        "evidence_candidates": [
+          {
+            "id": "E01",
+            "quote": "客户上午表示今年项目预算大约 60 万，可以继续推进",
+            "field": "budget"
+          },
+          {
+            "id": "E02",
+            "quote": "客户又表示今年预算目前已经被冻结，暂时无法确认是否还能继续采购",
+            "field": "budget"
+          },
+          {
+            "id": "E03",
+            "quote": "产品方案本身客户仍表示认可",
+            "field": "solution_evaluation"
+          }
+        ]
+      },
+      "api_response": {
+        "analysis_id": "f459e857-b7e9-4ca5-a8b2-066e4166cf4a",
+        "revision": 1,
+        "status": "need_confirmation",
+        "summary": "当前销售记录信息不足，尚无法形成可靠商机阶段判断；输入信息过于残缺，无法可靠分析，需要补充客户需求、场景或推进状态。",
+        "stage": null,
+        "crm_fields": {
+          "customer_needs": [],
+          "core_scenarios": [],
+          "budget": {
+            "value": null,
+            "status": "conflict",
+            "evidence_ids": [
+              "E01",
+              "E02"
+            ],
+            "conflicting_values": [
+              "大约 60 万",
+              "今年预算目前已经被冻结"
+            ],
+            "reason": "记录中存在互相冲突的信息，不能自动选择其中一条作为最终事实。"
+          },
+          "decision_maker": {
+            "name": null,
+            "role": null,
+            "status": "unknown",
+            "authority_confirmed": false,
+            "evidence_ids": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          "influencers": [],
+          "timeline": {
+            "value": null,
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供明确推进时间或上线计划。"
+          }
+        },
+        "opportunity_risks": [
+          {
+            "type": "conflict",
+            "severity": "high",
+            "description": "上午表示今年预算约 60 万，下午表示预算被冻结，无法确认是否继续采购",
+            "evidence_ids": [
+              "E01",
+              "E02"
+            ]
+          },
+          {
+            "type": "demand_invalidated",
+            "severity": "high",
+            "description": "客户表达项目暂停、预算不可用或延期，当前需求有效性需要确认。",
+            "evidence_ids": [
+              "E02"
+            ]
+          }
+        ],
+        "analysis_warnings": [
+          {
+            "type": "insufficient_input",
+            "severity": "high",
+            "description": "输入信息过于残缺，无法可靠分析。",
+            "evidence_ids": []
+          }
+        ],
+        "confirmed_next_action": null,
+        "recommended_next_actions": [
+          {
+            "action": "优先确认项目当前是否仍计划推进，并澄清阻塞推进的关键信息",
+            "owner": "销售负责人",
+            "time": "待确认",
+            "type": "ai_recommended",
+            "reason": "当前存在预算冲突、需求暂停、预算不可用或延期等高影响风险，需先解除阻塞后再推进下一阶段。"
+          }
+        ],
+        "unconfirmed_info": [
+          {
+            "value": "预算存在冲突",
+            "status": "conflict",
+            "evidence_ids": [
+              "E01",
+              "E02"
+            ],
+            "conflicting_values": [
+              "大约 60 万",
+              "今年预算目前已经被冻结"
+            ],
+            "reason": "记录中存在互相冲突的信息，不能自动选择其中一条作为最终事实。"
+          },
+          {
+            "value": "决策人或决策权限未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          {
+            "value": "时间计划未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供明确推进时间或上线计划。"
+          },
+          {
+            "value": "客户已确认下一步行动未明确",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未出现客户已经确认的下一步动作、负责人或时间。"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "E01",
+            "quote": "客户上午表示今年项目预算大约 60 万，可以继续推进",
+            "start_char": 0,
+            "end_char": 26,
+            "field": "budget",
+            "valid": true,
+            "sufficient": true,
+            "insufficiency_reason": null
+          },
+          {
+            "id": "E02",
+            "quote": "客户又表示今年预算目前已经被冻结，暂时无法确认是否还能继续采购",
+            "start_char": 35,
+            "end_char": 66,
+            "field": "budget",
+            "valid": true,
+            "sufficient": true,
+            "insufficiency_reason": null
+          },
+          {
+            "id": "E03",
+            "quote": "产品方案本身客户仍表示认可",
+            "start_char": 67,
+            "end_char": 80,
+            "field": "solution_evaluation",
+            "valid": true,
+            "sufficient": true,
+            "insufficiency_reason": null
+          }
+        ],
+        "clarification": {
+          "needed": true,
+          "questions": [
+            {
+              "field": "budget",
+              "question": "请确认客户当前预算状态：今年仍有约 50 万元预算，还是今年暂无预算、计划延期到明年？",
+              "priority": "high",
+              "reason": "该问题可直接解除预算冲突并影响 S3 判断。"
+            },
+            {
+              "field": "stage",
+              "question": "请确认该项目当前是否仍有效推进，还是已经暂停或延期到明年？",
+              "priority": "high",
+              "reason": "需求有效性会影响 S3 阶段判断。"
+            }
+          ],
+          "max_questions": 3
+        },
+        "developer_details": {
+          "stage_signals": [
+            {
+              "signal_type": "budget_discussed",
+              "explicitness": "explicit",
+              "polarity": "positive",
+              "attribution": "customer",
+              "current_validity": "historical",
+              "evidence_id": "E01"
+            },
+            {
+              "signal_type": "budget_unavailable",
+              "explicitness": "explicit",
+              "polarity": "negative",
+              "attribution": "customer",
+              "current_validity": "active",
+              "evidence_id": "E02"
+            },
+            {
+              "signal_type": "solution_evaluation",
+              "explicitness": "explicit",
+              "polarity": "positive",
+              "attribution": "customer",
+              "current_validity": "active",
+              "evidence_id": "E03"
+            }
+          ],
+          "valid_evidence_ids": [
+            "E01",
+            "E02",
+            "E03"
+          ],
+          "sufficient_evidence_ids": [
+            "E01",
+            "E02",
+            "E03"
+          ],
+          "input_summary": "客户上午表示今年项目预算大约 60 万，可以继续推进。下午再次沟通时，客户又表示今年预算目前已经被冻结，暂时无法确认是否还能继续采购。产品方案本身客户仍表示认…",
+          "provider": "deepseek",
+          "model": "deepseek-v4-flash",
+          "latency_ms": 4129
+        }
+      },
+      "validator_rule_trace": {
+        "stage_signals": [
+          {
+            "signal_type": "budget_discussed",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "attribution": "customer",
+            "current_validity": "historical",
+            "evidence_id": "E01"
+          },
+          {
+            "signal_type": "budget_unavailable",
+            "explicitness": "explicit",
+            "polarity": "negative",
+            "attribution": "customer",
+            "current_validity": "active",
+            "evidence_id": "E02"
+          },
+          {
+            "signal_type": "solution_evaluation",
+            "explicitness": "explicit",
+            "polarity": "positive",
+            "attribution": "customer",
+            "current_validity": "active",
+            "evidence_id": "E03"
+          }
+        ],
+        "valid_evidence_ids": [
+          "E01",
+          "E02",
+          "E03"
+        ],
+        "sufficient_evidence_ids": [
+          "E01",
+          "E02",
+          "E03"
+        ],
+        "stage": null,
+        "crm_fields": {
+          "customer_needs": [],
+          "core_scenarios": [],
+          "budget": {
+            "value": null,
+            "status": "conflict",
+            "evidence_ids": [
+              "E01",
+              "E02"
+            ],
+            "conflicting_values": [
+              "大约 60 万",
+              "今年预算目前已经被冻结"
+            ],
+            "reason": "记录中存在互相冲突的信息，不能自动选择其中一条作为最终事实。"
+          },
+          "decision_maker": {
+            "name": null,
+            "role": null,
+            "status": "unknown",
+            "authority_confirmed": false,
+            "evidence_ids": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          "influencers": [],
+          "timeline": {
+            "value": null,
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供明确推进时间或上线计划。"
+          }
+        },
+        "opportunity_risks": [
+          {
+            "type": "conflict",
+            "severity": "high",
+            "description": "上午表示今年预算约 60 万，下午表示预算被冻结，无法确认是否继续采购",
+            "evidence_ids": [
+              "E01",
+              "E02"
+            ]
+          },
+          {
+            "type": "demand_invalidated",
+            "severity": "high",
+            "description": "客户表达项目暂停、预算不可用或延期，当前需求有效性需要确认。",
+            "evidence_ids": [
+              "E02"
+            ]
+          }
+        ],
+        "analysis_warnings": [
+          {
+            "type": "insufficient_input",
+            "severity": "high",
+            "description": "输入信息过于残缺，无法可靠分析。",
+            "evidence_ids": []
+          }
+        ],
+        "confirmed_next_action": null,
+        "recommended_next_actions": [
+          {
+            "action": "优先确认项目当前是否仍计划推进，并澄清阻塞推进的关键信息",
+            "owner": "销售负责人",
+            "time": "待确认",
+            "type": "ai_recommended",
+            "reason": "当前存在预算冲突、需求暂停、预算不可用或延期等高影响风险，需先解除阻塞后再推进下一阶段。"
+          }
+        ],
+        "unconfirmed_info": [
+          {
+            "value": "预算存在冲突",
+            "status": "conflict",
+            "evidence_ids": [
+              "E01",
+              "E02"
+            ],
+            "conflicting_values": [
+              "大约 60 万",
+              "今年预算目前已经被冻结"
+            ],
+            "reason": "记录中存在互相冲突的信息，不能自动选择其中一条作为最终事实。"
+          },
+          {
+            "value": "决策人或决策权限未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "当前记录未明确最终审批、拍板或购买决策权限。"
+          },
+          {
+            "value": "时间计划未确认",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未提供明确推进时间或上线计划。"
+          },
+          {
+            "value": "客户已确认下一步行动未明确",
+            "status": "unknown",
+            "evidence_ids": [],
+            "conflicting_values": [],
+            "reason": "本次记录未出现客户已经确认的下一步动作、负责人或时间。"
+          }
+        ]
+      },
+      "field_assessment": [
+        [
+          "客户需求",
+          "可识别项目/方案继续推进信息；无具体痛点时不得编造",
+          "空",
+          "一致",
+          "未编造业务痛点。"
+        ],
+        [
+          "核心场景",
+          "无具体业务场景，待确认或空",
+          "空",
+          "一致",
+          "未编造场景。"
+        ],
+        [
+          "预算",
+          "conflict，不得选择单一事实",
+          "conflict；conflicting_values=大约 60 万、今年预算目前已经被冻结",
+          "一致",
+          "Budget value 粒度正确，冲突传播到正式 CRM 字段。"
+        ],
+        [
+          "决策人",
+          "未提及，待确认",
+          "待确认",
+          "一致",
+          "无人物幻觉。"
+        ],
+        [
+          "影响人",
+          "未提及，空",
+          "空",
+          "一致",
+          "无人物角色误判。"
+        ],
+        [
+          "时间计划",
+          "未提及明确时间计划，待确认",
+          "待确认",
+          "一致",
+          "无时间幻觉。"
+        ],
+        [
+          "商机阶段",
+          "不能稳定 S3；若方案认可被接纳，可保留 S2 + need_confirmation",
+          "stage=null，status=need_confirmation",
+          "部分一致",
+          "S3 被正确阻止，但 RawExtraction 的 active solution_evaluation 未被 Rule Engine evidence sufficiency 接纳，导致未保留 S2。"
+        ],
+        [
+          "风险",
+          "预算冲突/预算冻结/继续采购不确定",
+          "包含 conflict 和 demand_invalidated 类高风险",
+          "一致",
+          "风险动态来自当前负向信号和预算冲突。"
+        ],
+        [
+          "下一步行动",
+          "blocker-first，优先确认预算和是否继续采购",
+          "优先确认项目当前是否仍计划推进，并澄清阻塞推进的关键信息",
+          "一致",
+          "未机械推进 Demo 或报价。"
+        ],
+        [
+          "未确认信息",
+          "预算冲突、决策人、时间计划、客户已确认下一步等",
+          "四项均体现",
+          "一致",
+          "冲突与未知均进入待确认，但风险只承载高影响负面信号。"
+        ]
+      ],
+      "verdict": "PARTIAL PASS",
+      "issue_trace": "LLM RawExtraction 抽到 budget_discussed(historical)、budget_unavailable(active)、solution_evaluation(active) 和 budget conflict；Evidence 均有效。Rule Engine 因 budget conflict 与 budget_unavailable 阻止 S3，这是正确的；但 _signal_has_sufficient_evidence 对 solution_evaluation 只接受“方案评估/评估方案/可以评估”等模式，不接受“产品方案本身客户仍表示认可”，因此 S2 未保留。",
+      "open_issues": [
+        "S2 solution_evaluation 证据充分性规则过窄：直接发生层为 Rule Engine evidence sufficiency gate；根因层为 Rule Engine 与 Prompt semantic definition 不完全对齐。"
+      ]
+    }
+  ],
+  "manual_assessment": {
+    "overall": "Case6 PASS；Case7 PARTIAL PASS；Case8 PARTIAL PASS。无新 P0，有两个 P1 候选：S0 初步接触表达覆盖、S2 solution_evaluation 证据充分性规则与 Prompt 语义不一致。",
+    "case_verdicts": {
+      "Case6": "PASS",
+      "Case7": "PARTIAL PASS",
+      "Case8": "PARTIAL PASS"
+    },
+    "open_issue_pool_case1_case8": [
+      {
+        "capability": "customer_needs 语义边界",
+        "cases": [
+          "Case5"
+        ],
+        "priority": "P1",
+        "status": "语义边界待定，尚未修复"
+      },
+      {
+        "capability": "Grounded LLM Summary / 商机概览",
+        "cases": [
+          "Case1-Case5",
+          "UI review"
+        ],
+        "priority": "P1",
+        "status": "暂缓，非本轮测试目标"
+      },
+      {
+        "capability": "S0 初步接触表达覆盖",
+        "cases": [
+          "Case7"
+        ],
+        "priority": "P1",
+        "status": "新发现；Rule Engine minimum analyzability 未覆盖“沟通”类初步接触表达"
+      },
+      {
+        "capability": "S2 solution_evaluation 证据充分性",
+        "cases": [
+          "Case8"
+        ],
+        "priority": "P1",
+        "status": "新发现；RawExtraction 已抽到 signal，但 Rule Engine sufficiency pattern 过窄导致未采纳"
+      }
+    ],
+    "regression_check": "Case6-Case8 未发现 Budget value 或 Timeline value 粒度修复带来的副作用；Case6 timeline=下月启动实施，Case8 budget=大约 60 万。"
+  }
+}

@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 222 34% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 34% 12%;
+    --primary: 215 72% 34%;
+    --primary-foreground: 0 0% 100%;
+    --muted: 214 25% 93%;
+    --muted-foreground: 215 14% 38%;
+    --accent: 166 39% 88%;
+    --accent-foreground: 180 36% 18%;
+    --destructive: 0 72% 44%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 23% 86%;
+    --input: 214 23% 86%;
+    --ring: 215 72% 34%;
+    --radius: 8px;
+    --font-page-title: 1.75rem;
+    --font-section-title: 1.125rem;
+    --font-field-value: 1rem;
+    --font-body: 0.9375rem;
+    --font-caption: 0.8125rem;
+    --font-badge: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-size: var(--font-body);
+  }
+}
+
+::selection {
+  background: rgba(50, 107, 167, 0.22);
+}
