@@ -9,9 +9,12 @@ venv/
 .env.*
 !.env.example
 !frontend/.env.example
+.dev.vars
 data/
 node_modules/
 .next/
+.open-next/
+.wrangler/
 .turbo/
 dist/
 coverage/
