@@ -296,6 +296,13 @@ def _normalize_person_name_role(name: str | None, role: str | None) -> tuple[str
     if procurement_match:
         cleaned_name = procurement_match.group("name")
         cleaned_role = _clean_person_role(cleaned_role or "采购")
+    role_prefix_match = re.fullmatch(
+        r"(?P<role>(?:教务运营|信息化|数字化|技术|IT|客服|业务|售前|产品)[^，。；、\n]{0,8}负责人)(?P<name>[\u4e00-\u9fa5]{1,3}(?:经理|总|工|主管))",
+        cleaned_name,
+    )
+    if role_prefix_match:
+        cleaned_name = role_prefix_match.group("name")
+        cleaned_role = _clean_person_role(cleaned_role or role_prefix_match.group("role"))
     noisy_role_suffix = re.match(r"(?P<name>[\u4e00-\u9fa5A-Za-z\s]{1,12}(?:经理|总|工|主管))(?P<roles>(?:[、,，/](?:采购经理|采购|技术|IT|信息化|业务|客服|方案评估参与人))+)$", cleaned_name)
     if noisy_role_suffix:
         cleaned_name = noisy_role_suffix.group("name").strip()
@@ -348,6 +355,11 @@ def _person_role_mentions(segment: str) -> list[tuple[str, str]]:
     return mentions
 
 
+def _decision_confirmation_segment(segment: str) -> bool:
+    compact = re.sub(r"\s+", "", segment.strip())
+    return compact.startswith(("决策人确认", "决策人修正", "最终审批人确认", "拍板人确认", "采购决策权限确认"))
+
+
 def _with_deterministic_stage_and_people_hints(original_text: str, raw: RawExtraction) -> RawExtraction:
     resolved = raw.model_copy(deep=True)
     for match in re.finditer(r"客户[^。！？\n]{0,80}(?:确认|希望|同意|可以)[^。！？\n]{0,40}评估[^。！？\n]{0,30}(?:正式采购方案|采购方案|技术方案|方案|产品)", original_text):
@@ -355,6 +367,8 @@ def _with_deterministic_stage_and_people_hints(original_text: str, raw: RawExtra
         _append_stage_signal(resolved, "solution_evaluation", evidence_id)
 
     for segment in _sentence_like_segments(original_text):
+        if _decision_confirmation_segment(segment):
+            continue
         if not _segment_has_influencer_action(segment):
             continue
         for name, role in _person_role_mentions(segment):
@@ -371,7 +385,13 @@ def _with_deterministic_original_next_action_hints(original_text: str, raw: RawE
     if not original_section:
         return raw
     resolved = raw.model_copy(deep=True)
-    existing_event_keys = {_event_key(action.action) for action in resolved.candidate_next_actions if _event_key(action.action)}
+    existing_event_keys = {
+        _event_key(action.action)
+        for action in resolved.candidate_next_actions
+        if _event_key(action.action)
+        and action.attribution in {Attribution.CUSTOMER, Attribution.THIRD_PARTY}
+        and action.explicitness == Explicitness.EXPLICIT
+    }
     for segment in _sentence_like_segments(original_section):
         if "下一步" not in segment or not re.search(r"(确认|确定|约定|安排)", segment):
             continue
@@ -828,6 +848,19 @@ def _timeline_item_from_next_action_user_line(
     return "下一步行动" in compact and "时间计划" not in compact
 
 
+def _influencer_from_user_decision_line(
+    person: CandidatePerson,
+    original_text: str,
+    evidence_origins: dict[str, str],
+    evidence_positions: dict[str, int],
+) -> bool:
+    evidence_id = person.evidence_id or ""
+    if person.kind != "influencer" or not evidence_origins.get(evidence_id, "").startswith("user_"):
+        return False
+    line = _line_at(original_text, evidence_positions.get(evidence_id, -1))
+    return _decision_confirmation_segment(line)
+
+
 def _apply_user_fact_overrides(original_text: str, raw: RawExtraction, evidence_origins: dict[str, str], evidence_positions: dict[str, int]) -> RawExtraction:
     resolved = raw.model_copy(deep=True)
     resolved_fields: set[str] = set()
@@ -867,7 +900,7 @@ def _apply_user_fact_overrides(original_text: str, raw: RawExtraction, evidence_
         resolved.candidate_people = latest_people + [
             person
             for person in resolved.candidate_people
-            if person.kind == "influencer"
+            if person.kind == "influencer" and not _influencer_from_user_decision_line(person, original_text, evidence_origins, evidence_positions)
         ]
         resolved_fields.add("decision_maker")
     latest_actions = _latest_user_actions(resolved.candidate_next_actions, evidence_origins, evidence_positions)

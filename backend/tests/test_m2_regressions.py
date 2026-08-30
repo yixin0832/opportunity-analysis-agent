@@ -1361,6 +1361,27 @@ def test_influencer_role_already_in_name_is_removed():
     assert result.crm_fields.influencers[0].role == "方案评估参与人"
 
 
+def test_decision_maker_confirmation_does_not_create_influencer():
+    original = "今天拜访了星河科技客户服务部，参会人包括客服负责人王总和 IT 王工。王总说下周四可以安排一次产品 Demo，让IT 王工一起看效果。"
+    text = build_revision_input(
+        original,
+        [[ClarifyAnswer(question_id="decision_maker", answer="最终采购决策人是客服负责人王总")]],
+    )
+    decision_quote = "决策人确认：最终采购决策人是客服负责人王总"
+    raw = RawExtraction(
+        evidence_candidates=[
+            EvidenceCandidate(id="E01", quote=decision_quote, field="people", start_char=text.index(decision_quote)),
+        ],
+        candidate_people=[
+            CandidatePerson(name="王总", role="客服负责人", kind="influencer", evidence_id="E01", attribution=Attribution.CUSTOMER, explicitness=Explicitness.EXPLICIT),
+        ],
+    )
+    result = build_validated_opportunity(text, raw)
+    assert result.crm_fields.decision_maker.name == "王总"
+    assert result.crm_fields.decision_maker.status == FieldStatus.CONFIRMED
+    assert all(person.name != "王总" for person in result.crm_fields.influencers)
+
+
 def test_next_action_time_answer_does_not_become_owner():
     text = build_revision_input(
         "王总说下周四可以安排一次产品 Demo。",
@@ -1620,6 +1641,23 @@ def test_repeated_unknown_next_action_time_confirmation_stays_resolved():
     assert result.confirmed_next_action.owner == "张1"
     assert result.confirmed_next_action.time == "待确认"
     assert not any(risk.type == "conflict" and "下一步行动" in risk.description for risk in result.opportunity_risks)
+
+
+def test_original_next_action_fallback_overrides_sales_attribution_for_confirmed_meeting_sentence():
+    text = "今天和云澜教育集团教务运营负责人赵经理、信息化负责人孙工复盘了智能客服试点。客户确认招生咨询和学员售后答疑两个场景仍然要继续推进，试点效果总体认可，也希望评估正式采购方案。赵经理上午说今年项目预算大约 50 万，可以继续走采购申请；下午采购刘经理补充说财务系统里的立项预算是 70 万左右，两个金额还需要他们内部确认。客户没有取消需求，下一步确认由销售负责人李娜下周二和赵经理、采购刘经理开一次预算确认会。"
+    quote = "下一步确认由销售负责人李娜下周二和赵经理、采购刘经理开一次预算确认会"
+    result = build_validated_opportunity(
+        text,
+        RawExtraction(
+            evidence_candidates=[EvidenceCandidate(id="E04", quote=quote, field="next_action", start_char=text.index(quote))],
+            candidate_next_actions=[CandidateNextAction(action="开预算确认会", owner="李娜", time="下周二", evidence_id="E04", attribution=Attribution.SALES, explicitness=Explicitness.EXPLICIT)],
+        ),
+    )
+    assert result.confirmed_next_action is not None
+    assert result.confirmed_next_action.action == "开预算确认会"
+    assert result.confirmed_next_action.owner == "李娜"
+    assert result.confirmed_next_action.time == "下周二"
+    assert not any(item.value == "下一步行动未确认" for item in result.unconfirmed_info)
 
 
 def test_original_next_action_confirmed_by_owner_time_meeting_sentence_is_extracted():
